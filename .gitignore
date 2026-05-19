@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Build
+.next/
+public/.next/
+public/sw.js
+public/workbox-*.js
+
+# Outros
+Sistema
