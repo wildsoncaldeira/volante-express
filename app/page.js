@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Car, MapPin, Calendar, ChevronRight, Loader2, ListTodo, Wallet, User, Clock, Lock, LogOut, Camera, Package } from 'lucide-react';
+import { Plus, Car, MapPin, Calendar, ChevronRight, Loader2, ListTodo, Wallet, User, Clock, Lock, LogOut, Camera, Package, Trophy } from 'lucide-react';
 
 // --- COMPONENTE INTERNO (Lógica Principal) ---
 function HomeContent() {
@@ -23,6 +23,12 @@ function HomeContent() {
   const [loading, setLoading] = useState(true);
   const [creating, setCreating] = useState(false);
   const [activeTab, setActiveTab] = useState('agenda');
+
+  // Metas
+  const [monthlyGoal, setMonthlyGoal] = useState(0);
+  const [completedInRegion, setCompletedInRegion] = useState(0);
+  const [goalPercentage, setGoalPercentage] = useState(0);
+  const [motivationalMessage, setMotivationalMessage] = useState('');
 
   useEffect(() => {
     const tabPref = searchParams.get('activeTab');
@@ -54,7 +60,79 @@ function HomeContent() {
     setProfile(profileData);
 
     fetchData(currentUser.id);
-    setupRealtime(currentUser.id);
+    if (profileData?.region_id) {
+      fetchMonthlyGoalAndProgress(profileData.region_id);
+    }
+    setupRealtime(currentUser.id, profileData?.region_id);
+  }
+
+  async function fetchMonthlyGoalAndProgress(regionId) {
+    if (!regionId) return;
+
+    const currentMonth = new Date().toISOString().slice(0, 7); // YYYY-MM
+
+    // 1. Fetch current month goal
+    let { data: goalData } = await supabase
+      .from('regional_goals')
+      .select('goal_amount')
+      .eq('region_id', regionId)
+      .eq('month', currentMonth)
+      .maybeSingle();
+
+    let goal = goalData?.goal_amount;
+
+    if (goal === undefined || goal === null) {
+      // Fallback: get the most recent goal
+      const { data: prevGoal } = await supabase
+        .from('regional_goals')
+        .select('goal_amount')
+        .eq('region_id', regionId)
+        .lt('month', currentMonth)
+        .order('month', { ascending: false })
+        .limit(1);
+      if (prevGoal && prevGoal.length > 0) {
+        goal = prevGoal[0].goal_amount;
+      } else {
+        goal = 0; // No goal defined at all
+      }
+    }
+
+    const goalNum = Number(goal);
+    setMonthlyGoal(goalNum);
+
+    // 2. Fetch completed appointments in region for current month
+    const startOfMonth = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
+    const endOfMonth = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0, 23, 59, 59).toISOString();
+
+    const { count } = await supabase
+      .from('appointments')
+      .select('*', { count: 'exact', head: true })
+      .eq('region_id', regionId)
+      .eq('status', 'concluido')
+      .gte('completed_at', startOfMonth)
+      .lte('completed_at', endOfMonth);
+
+    const completed = count || 0;
+    setCompletedInRegion(completed);
+
+    if (goalNum > 0) {
+      setGoalPercentage((completed / goalNum) * 100);
+    } else {
+      setGoalPercentage(0);
+    }
+
+    // 3. Set random motivational message
+    const MOTIVATIONAL_MESSAGES = [
+      "Bora acelerar! Cada volante instalado nos deixa mais perto da meta!",
+      "Excelente trabalho! Continue focado e vamos bater essa meta juntos!",
+      "Foco total! O sucesso é a soma de pequenos esforços diários.",
+      "Mais um cliente satisfeito, mais um passo rumo à vitória!",
+      "A determinação de hoje é o resultado de amanhã. Vamos com tudo!",
+      "Trabalho em equipe faz o sonho funcionar. Foco na meta!",
+      "Falta pouco! Vamos fechar o mês com chave de ouro!"
+    ];
+    const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length);
+    setMotivationalMessage(MOTIVATIONAL_MESSAGES[randomIndex]);
   }
 
   async function fetchData(userId) {
@@ -70,13 +148,18 @@ function HomeContent() {
     setLoading(false);
   }
 
-  function setupRealtime(userId) {
+  function setupRealtime(userId, regionId) {
     const channel = supabase
       .channel('installer-view')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'appointments', filter: `user_id=eq.${userId}` },
-        () => fetchData(userId)
+        () => {
+          fetchData(userId);
+          if (regionId) {
+            fetchMonthlyGoalAndProgress(regionId);
+          }
+        }
       )
       .subscribe();
 
@@ -86,11 +169,27 @@ function HomeContent() {
   function formatDate(dateString) {
     if (!dateString) return 'Data a definir';
     const date = new Date(dateString);
-    const hoje = new Date();
-    if (date.toDateString() === hoje.toDateString()) {
-      return `Hoje, ${date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const today = new Date();
+    const tomorrow = new Date();
+    tomorrow.setDate(today.getDate() + 1);
+
+    const dDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const dToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const dTomorrow = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+
+    let prefix = "";
+    if (dDate.getTime() === dToday.getTime()) {
+      prefix = "Hoje";
+    } else if (dDate.getTime() === dTomorrow.getTime()) {
+      prefix = "Amanhã";
+    } else {
+      const days = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"];
+      prefix = days[date.getDay()];
     }
-    return date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+    const time = date.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' });
+    const formattedDate = date.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+    return `${prefix}, ${formattedDate} às ${time}`;
   }
 
   const handleNewService = async () => {
@@ -128,61 +227,167 @@ function HomeContent() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 pb-32 font-sans">
-      <div className="bg-slate-900 pt-10 pb-8 rounded-b-[40px] shadow-2xl border-b border-slate-800 flex flex-col items-center justify-center relative overflow-hidden">
+      <div className="bg-slate-900 py-4 px-6 rounded-b-[24px] shadow-2xl border-b border-slate-800 relative overflow-hidden">
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none"></div>
-        {activeTab === 'agenda' && (
-          <>
-            <div className="relative z-10 mb-2 px-6"><img src="/icon-horizontal.png" alt="Volante Express" className="h-16 object-contain drop-shadow-lg" /></div>
-            <p className="text-slate-400 text-sm">Bem-vindo, <span className="text-blue-400 font-bold">{profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0]}</span></p>
-            {isPreviewMode && <span className="bg-amber-500 text-black text-[10px] font-bold px-2 py-0.5 rounded mt-2">MODO ESPIÃO</span>}
-          </>
-        )}
-        {activeTab === 'perfil' && (
-          <div className="text-center z-10">
-            <div className="w-24 h-24 bg-slate-800 rounded-full mx-auto mb-4 border-4 border-slate-700 flex items-center justify-center relative"><User size={40} className="text-slate-500" /><button className="absolute bottom-0 right-0 bg-blue-600 p-2 rounded-full text-white hover:bg-blue-500"><Camera size={14} /></button></div>
-            <h2 className="text-xl font-bold text-white">{profile?.full_name || 'Instalador'}</h2>
-            <p className="text-slate-400 text-sm">{user?.email}</p>
-            <span className="inline-block mt-2 px-3 py-1 bg-slate-800 rounded-full text-xs text-slate-300 font-bold uppercase tracking-wider">{profile?.region_id || 'Sem Regional'}</span>
+        <div className="flex items-center justify-between w-full relative z-10">
+          <div className="flex flex-col items-start gap-1">
+            <img src="/icon-horizontal.png" alt="Volante Express" className="h-10 object-contain drop-shadow-md" />
           </div>
-        )}
+          <div className="text-right flex flex-col items-end">
+            <span className="text-slate-400 text-xs font-medium">Bem-vindo,</span>
+            <span className="text-blue-400 font-extrabold text-sm leading-tight mt-0.5">
+              {profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0]}
+            </span>
+          </div>
+        </div>
       </div>
 
-      <main className="p-6 space-y-4">
+      <main className="p-6 space-y-6">
+        {activeTab === 'perfil' && (
+          <div className="text-center">
+            <h1 className="text-lg text-slate-400 font-anton-italic-bold">
+              Perfil
+            </h1>
+          </div>
+        )}
         {activeTab === 'agenda' && (
           <>
-            <div className="flex items-center justify-between"><h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Calendar size={14} /> Serviços Pendentes</h3><span className="text-xs bg-slate-800 text-slate-500 px-2 py-1 rounded-lg">{appointments.length} itens</span></div>
-            <div className="space-y-3">
-              {appointments.length === 0 && (<div className="text-center py-12 border border-dashed border-slate-800 rounded-3xl bg-slate-900/30"><Car size={40} className="mx-auto text-slate-700 mb-3" /><p className="text-slate-500 text-sm font-medium">Tudo limpo por aqui.</p><p className="text-slate-600 text-xs mt-1">Aguarde novos agendamentos.</p></div>)}
-              {appointments.map(app => (
-                <div key={app.id} onClick={() => router.push(`/atendimento/${app.id}`)} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 relative overflow-hidden active:scale-95 transition-transform cursor-pointer hover:border-blue-500/30 shadow-md">
-                  <div className="absolute top-0 right-0 bg-slate-800 pl-3 pr-2 py-1 rounded-bl-xl border-b border-l border-slate-700 flex items-center gap-1"><MapPin size={10} className="text-blue-400" /><span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide truncate max-w-[100px]">{app.calendar_name || app.region_id || 'Regional'}</span></div>
-                  <div className="flex items-start gap-4 mt-2">
-                    <div className="bg-blue-950/50 p-3 rounded-xl text-blue-400 border border-blue-900/30 self-center"><Car size={20} /></div>
-                    <div className="flex-1"><h4 className="font-bold text-white text-lg leading-tight">{app.vehicle_model}</h4><p className="text-xs text-slate-500 mb-2">{app.customer_name}</p><div className="inline-flex items-center gap-1.5 bg-slate-950/50 px-2 py-1 rounded-lg border border-slate-800/50"><Clock size={12} className="text-blue-500" /><span className="text-xs font-medium text-slate-300">{formatDate(app.appointment_at)}</span></div></div>
-                    <div className="self-center flex items-center gap-2">
-                      {app.customer_phone && (
-                        <button
-                          onClick={(e) => openWhatsApp(e, app.customer_phone)}
-                          className="bg-[#25D366]/10 hover:bg-[#25D366]/20 p-2.5 rounded-full border border-[#25D366]/20 transition-all shadow-[0_0_10px_rgba(37,211,102,0.1)] hover:shadow-[0_0_15px_rgba(37,211,102,0.3)] hover:scale-105 active:scale-95 flex items-center justify-center"
-                          title="Chamar no WhatsApp"
-                        >
-                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#25D366" className="drop-shadow-sm">
-                            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" />
-                          </svg>
-                        </button>
-                      )}
-                      <ChevronRight className="text-slate-600" size={16} />
-                    </div>
+            {/* CARD DE METAS */}
+            {monthlyGoal > 0 && (
+              <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 relative overflow-hidden shadow-lg">
+                <div className="flex justify-between items-center mb-3">
+                  <div>
+                    <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Trophy size={12} className="text-yellow-500" /> META DO MÊS</h4>
+                    <p className="text-lg font-bold text-white mt-1">{completedInRegion} de {monthlyGoal} Volantes</p>
                   </div>
+                  <span className="text-lg font-extrabold text-blue-500 bg-blue-950/40 px-3 py-1 rounded-xl border border-blue-900/30">
+                    {Math.round(goalPercentage)}%
+                  </span>
                 </div>
-              ))}
+                <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                  <div 
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500" 
+                    style={{ width: `${Math.min(goalPercentage, 100)}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs text-slate-400 italic mt-3 flex items-center gap-1.5">
+                  ✨ {motivationalMessage}
+                </p>
+              </div>
+            )}
+
+            <div className="flex items-center justify-between"><h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Calendar size={14} /> Serviços Pendentes</h3><span className="text-xs bg-slate-800 text-slate-500 px-2 py-1 rounded-lg">{appointments.length} itens</span></div>
+             <div className="space-y-3">
+              {appointments.length === 0 && (<div className="text-center py-12 border border-dashed border-slate-800 rounded-3xl bg-slate-900/30"><Car size={40} className="mx-auto text-slate-700 mb-3" /><p className="text-slate-500 text-sm font-medium">Tudo limpo por aqui.</p><p className="text-slate-600 text-xs mt-1">Aguarde novos agendamentos.</p></div>)}
+              {(() => {
+                let lastDate = null;
+                return appointments.map(app => {
+                  const appDate = app.appointment_at ? new Date(app.appointment_at).toDateString() : 'no-date';
+                  const showDivider = appDate !== lastDate;
+                  if (showDivider) {
+                    lastDate = appDate;
+                  }
+
+                  let dividerLabel = "Data a definir";
+                  if (app.appointment_at) {
+                    const date = new Date(app.appointment_at);
+                    const today = new Date();
+                    const tomorrow = new Date();
+                    tomorrow.setDate(today.getDate() + 1);
+
+                    const dDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+                    const dToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                    const dTomorrow = new Date(tomorrow.getFullYear(), tomorrow.getMonth(), tomorrow.getDate());
+
+                    let prefix = "";
+                    if (dDate.getTime() === dToday.getTime()) prefix = "Hoje";
+                    else if (dDate.getTime() === dTomorrow.getTime()) prefix = "Amanhã";
+                    else {
+                      const days = ["Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"];
+                      prefix = days[date.getDay()];
+                    }
+                    dividerLabel = `${prefix}, ${date.toLocaleDateString('pt-BR', { day: '2-digit', month: 'long' })}`;
+                  }
+
+                  return (
+                    <div key={app.id} className="space-y-3">
+                      {showDivider && (
+                        <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-6 mb-2 border-l-2 border-blue-500 pl-2 text-left">
+                          {dividerLabel}
+                        </div>
+                      )}
+                      <div onClick={() => router.push(`/atendimento/${app.id}`)} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 relative overflow-hidden active:scale-95 transition-transform cursor-pointer hover:border-blue-500/30 shadow-md">
+                        <div className="absolute top-0 right-0 bg-slate-800 pl-3 pr-2 py-1 rounded-bl-xl border-b border-l border-slate-700 flex items-center gap-1"><MapPin size={10} className="text-blue-400" /><span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide truncate max-w-[100px]">{app.calendar_name || app.region_id || 'Regional'}</span></div>
+                        <div className="flex items-start gap-4 mt-2">
+                          <div className="flex-1">
+                            <h4 className="font-bold text-white text-lg leading-tight">{app.vehicle_model}</h4>
+                            <p className="text-xs text-slate-500 mb-2">{app.customer_name}</p>
+                            <div className="inline-flex items-center gap-1.5 bg-slate-950/50 px-2 py-1 rounded-lg border border-slate-800/50">
+                              <Clock size={12} className="text-blue-500" />
+                              <span className="text-xs font-medium text-slate-300 whitespace-nowrap">{formatDate(app.appointment_at)}</span>
+                            </div>
+                          </div>
+                          <div className="self-center flex items-center gap-2">
+                            {app.customer_phone && (
+                              <button
+                                onClick={(e) => openWhatsApp(e, app.customer_phone)}
+                                className="bg-[#25D366]/10 hover:bg-[#25D366]/20 p-2.5 rounded-full border border-[#25D366]/20 transition-all shadow-[0_0_10px_rgba(37,211,102,0.1)] hover:shadow-[0_0_15px_rgba(37,211,102,0.3)] hover:scale-105 active:scale-95 flex items-center justify-center"
+                                title="Chamar no WhatsApp"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="#25D366" className="drop-shadow-sm">
+                                  <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51a12.8 12.8 0 0 0-.57-.01c-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 0 1-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 0 1-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 0 1 2.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0 0 12.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 0 0 5.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 0 0-3.48-8.413Z" /></svg>
+                              </button>
+                            )}
+                            <ChevronRight className="text-slate-600" size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                });
+              })()}
             </div>
           </>
         )}
         {activeTab === 'perfil' && (
-          <div className="space-y-4">
-            <button onClick={handleUpdatePassword} className="w-full bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between group hover:border-blue-500/50 transition-colors"><div className="flex items-center gap-4"><div className="bg-slate-800 p-2 rounded-xl text-slate-400 group-hover:text-blue-400"><Lock size={20} /></div><div className="text-left"><h4 className="text-slate-200 font-bold">Alterar Senha</h4><p className="text-xs text-slate-500">Atualize sua segurança</p></div></div><ChevronRight size={16} className="text-slate-600" /></button>
-            <button onClick={handleLogout} className="w-full bg-red-950/20 p-4 rounded-2xl border border-red-900/30 flex items-center justify-between group hover:bg-red-950/30 transition-colors"><div className="flex items-center gap-4"><div className="bg-red-900/20 p-2 rounded-xl text-red-500"><LogOut size={20} /></div><div className="text-left"><h4 className="text-red-400 font-bold">Sair da Conta</h4><p className="text-xs text-red-500/60">Encerrar sessão</p></div></div></button>
+          <div className="space-y-6">
+            {/* Perfil Info Card */}
+            <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center relative overflow-hidden shadow-lg">
+              <div className="w-24 h-24 bg-slate-800 rounded-full mx-auto mb-4 border-4 border-slate-700 flex items-center justify-center relative shadow-inner">
+                {profile?.avatar_url ? <img src={profile.avatar_url} alt="Profile" className="w-full h-full object-cover rounded-full" /> : <User size={40} className="text-slate-500" />}
+                <button className="absolute bottom-0 right-0 bg-blue-600 p-2 rounded-full text-white hover:bg-blue-500 shadow-md transition-transform active:scale-90">
+                  <Camera size={14} />
+                </button>
+              </div>
+              <h2 className="text-xl font-bold text-white">{profile?.full_name || 'Instalador'}</h2>
+              <p className="text-slate-400 text-sm mt-1">{user?.email}</p>
+              <span className="inline-block mt-3 px-3 py-1 bg-slate-800 rounded-full text-xs text-slate-300 font-bold uppercase tracking-wider border border-slate-700/50">
+                {profile?.region_id || 'Sem Regional'}
+              </span>
+            </div>
+
+            {/* Actions */}
+            <div className="space-y-3">
+              <button onClick={handleUpdatePassword} className="w-full bg-slate-900 p-4 rounded-2xl border border-slate-800 flex items-center justify-between group hover:border-blue-500/50 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="bg-slate-800 p-2 rounded-xl text-slate-400 group-hover:text-blue-400"><Lock size={20} /></div>
+                  <div className="text-left">
+                    <h4 className="text-slate-200 font-bold">Alterar Senha</h4>
+                    <p className="text-xs text-slate-500">Atualize sua segurança</p>
+                  </div>
+                </div>
+                <ChevronRight size={16} className="text-slate-600" />
+              </button>
+              <button onClick={handleLogout} className="w-full bg-red-950/20 p-4 rounded-2xl border border-red-900/30 flex items-center justify-between group hover:bg-red-950/30 transition-colors">
+                <div className="flex items-center gap-4">
+                  <div className="bg-red-900/20 p-2 rounded-xl text-red-500"><LogOut size={20} /></div>
+                  <div className="text-left">
+                    <h4 className="text-red-400 font-bold">Sair da Conta</h4>
+                    <p className="text-xs text-red-500/60">Encerrar sessão</p>
+                  </div>
+                </div>
+              </button>
+            </div>
           </div>
         )}
       </main>

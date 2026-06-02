@@ -115,9 +115,15 @@ export default function AtendimentoPage({ params }) {
       const { data: { publicUrl } } = supabase.storage.from('service-photos').getPublicUrl(filePath);
 
       // 2. Cálculos Financeiros (Internos) - Pagamento 1
+      const findRateObj = (method, insts) => {
+        let r = rates.find(rate => rate.method === method && rate.installments === insts && rate.region_id === appointment.region_id);
+        if (!r) r = rates.find(rate => rate.method === method && rate.installments === insts && !rate.region_id);
+        return r;
+      };
+
       const grossVal = parseFloat(amount);
       const finalInstallments = paymentMethod === 'credito' ? parseInt(installments) : 1;
-      const rateObj = rates.find(r => r.method === paymentMethod && r.installments === finalInstallments);
+      const rateObj = findRateObj(paymentMethod, finalInstallments);
       const taxPercent = rateObj ? rateObj.rate_percent : 0;
       const netVal = grossVal - (grossVal * (taxPercent / 100));
 
@@ -126,7 +132,7 @@ export default function AtendimentoPage({ params }) {
       if (isSplitPayment) {
         grossVal2 = parseFloat(amount2);
         finalInstallments2 = paymentMethod2 === 'credito' ? parseInt(installments2) : 1;
-        const rateObj2 = rates.find(r => r.method === paymentMethod2 && r.installments === finalInstallments2);
+        const rateObj2 = findRateObj(paymentMethod2, finalInstallments2);
         taxPercent2 = rateObj2 ? rateObj2.rate_percent : 0;
         netVal2 = grossVal2 - (grossVal2 * (taxPercent2 / 100));
       }
@@ -137,7 +143,10 @@ export default function AtendimentoPage({ params }) {
         targetAccountId = accounts.find(a => a.type === 'carteira' && a.region_id === appointment.region_id)?.id;
         if (!targetAccountId) targetAccountId = accounts.find(a => a.type === 'carteira')?.id;
       } else {
-        targetAccountId = accounts.find(a => a.type === 'banco' && a.is_default)?.id;
+        // Tenta achar conta do tipo banco específica da regional
+        targetAccountId = accounts.find(a => a.type === 'banco' && a.region_id === appointment.region_id)?.id;
+        // Fallback para a conta banco padrão (global)
+        if (!targetAccountId) targetAccountId = accounts.find(a => a.type === 'banco' && a.is_default)?.id;
         if (!targetAccountId) targetAccountId = accounts.find(a => a.type === 'banco')?.id;
       }
 
@@ -148,7 +157,10 @@ export default function AtendimentoPage({ params }) {
           targetAccountId2 = accounts.find(a => a.type === 'carteira' && a.region_id === appointment.region_id)?.id;
           if (!targetAccountId2) targetAccountId2 = accounts.find(a => a.type === 'carteira')?.id;
         } else {
-          targetAccountId2 = accounts.find(a => a.type === 'banco' && a.is_default)?.id;
+          // Tenta achar conta do tipo banco específica da regional
+          targetAccountId2 = accounts.find(a => a.type === 'banco' && a.region_id === appointment.region_id)?.id;
+          // Fallback para a conta banco padrão (global)
+          if (!targetAccountId2) targetAccountId2 = accounts.find(a => a.type === 'banco' && a.is_default)?.id;
           if (!targetAccountId2) targetAccountId2 = accounts.find(a => a.type === 'banco')?.id;
         }
       }

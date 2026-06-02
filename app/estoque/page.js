@@ -16,6 +16,9 @@ export default function EstoquePage() {
     const [inventory, setInventory] = useState([]);
     const [searchTerm, setSearchTerm] = useState('');
     const [regionName, setRegionName] = useState('Sua Região');
+    const [profile, setProfile] = useState(null);
+    const [user, setUser] = useState(null);
+    const [invSortOrder, setInvSortOrder] = useState('qty_desc'); // qty_desc, qty_asc, name_asc
 
     useEffect(() => {
         fetchInventory();
@@ -26,19 +29,21 @@ export default function EstoquePage() {
         const { data: { user } } = await supabase.auth.getUser();
 
         if (user) {
-            const { data: profile } = await supabase
+            setUser(user);
+            const { data: profileData } = await supabase
                 .from('profiles')
-                .select('region_id')
+                .select('*')
                 .eq('id', user.id)
                 .single();
 
-            if (profile?.region_id) {
-                setRegionName(profile.region_id);
+            setProfile(profileData);
+
+            if (profileData?.region_id) {
+                setRegionName(profileData.region_id);
                 const { data: invData } = await supabase
                     .from('inventory')
                     .select('*')
-                    .eq('region_id', profile.region_id)
-                    .order('name');
+                    .eq('region_id', profileData.region_id);
 
                 setInventory(invData || []);
             }
@@ -46,35 +51,61 @@ export default function EstoquePage() {
         setLoading(false);
     }
 
-    const filteredInventory = inventory.filter(item =>
-        item.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    const sortedInventory = [...inventory]
+        .filter(item => item.name.toLowerCase().includes(searchTerm.toLowerCase()))
+        .sort((a, b) => {
+            if (invSortOrder === 'qty_desc') return b.quantity - a.quantity;
+            if (invSortOrder === 'qty_asc') return a.quantity - b.quantity;
+            return a.name.localeCompare(b.name);
+        });
 
     return (
         <div className="min-h-screen bg-slate-950 pb-32 text-slate-200 font-sans">
-            <div className="bg-slate-900 pt-10 pb-8 rounded-b-[40px] shadow-2xl border-b border-slate-800 flex flex-col items-center justify-center relative overflow-hidden">
+            {/* Cabeçalho Padronizado Compacto */}
+            <div className="bg-slate-900 py-4 px-6 rounded-b-[24px] shadow-2xl border-b border-slate-800 relative overflow-hidden">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-600/10 blur-[80px] rounded-full pointer-events-none"></div>
-                <div className="relative z-10 mb-2 px-6">
-                    <img src="/icon-horizontal.png" alt="Volante Express" className="h-16 object-contain drop-shadow-lg" />
+                <div className="flex items-between justify-between w-full relative z-10">
+                    <div className="flex items-center gap-3">
+                        <img src="/icon-horizontal.png" alt="Volante Express" className="h-10 object-contain drop-shadow-md" />
+                    </div>
+                    <div className="text-right flex flex-col items-end">
+                        <span className="text-slate-400 text-xs font-medium">Bem-vindo,</span>
+                        <span className="text-blue-400 font-extrabold text-sm leading-tight mt-0.5">
+                            {profile?.full_name?.split(' ')[0] || user?.email?.split('@')[0]}
+                        </span>
+                    </div>
                 </div>
-                <p className="text-slate-400 text-sm">Controle de Estoque</p>
-                <span className="bg-slate-800 text-slate-300 text-[10px] uppercase font-bold px-3 py-1 rounded-full mt-3 tracking-wider">
-                    {regionName}
-                </span>
             </div>
 
             <main className="max-w-md mx-auto p-5 space-y-6">
-                <div className="relative">
-                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                        <Search size={18} className="text-slate-500" />
+                <div className="text-center">
+                    <h1 className="text-lg text-slate-400 font-anton-italic-bold">
+                        Estoque
+                    </h1>
+                </div>
+                {/* Busca e Ordenação */}
+                <div className="relative flex gap-3">
+                    <div className="relative flex-1">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <Search size={18} className="text-slate-500" />
+                        </div>
+                        <input
+                            type="text"
+                            placeholder="Buscar material..."
+                            className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-white outline-none focus:border-blue-500 transition-colors placeholder-slate-500 text-sm"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                        />
                     </div>
-                    <input
-                        type="text"
-                        placeholder="Buscar material..."
-                        className="w-full pl-10 pr-4 py-3 bg-slate-900 border border-slate-800 rounded-xl text-white outline-none focus:border-blue-500 transition-colors placeholder-slate-500"
-                        value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
-                    />
+                    <select
+                        value={invSortOrder}
+                        onChange={(e) => setInvSortOrder(e.target.value)}
+                        className="px-3 bg-slate-900 border border-slate-800 rounded-xl text-xs font-bold text-slate-300 outline-none focus:border-blue-500 cursor-pointer"
+                    >
+                        <option value="qty_desc">Mais Qtd</option>
+                        <option value="qty_asc">Menos Qtd</option>
+                        <option value="name_asc">Nome</option>
+                    </select>
                 </div>
 
                 <div className="space-y-4">
@@ -82,19 +113,19 @@ export default function EstoquePage() {
                         <h3 className="font-bold text-slate-400 text-sm uppercase ml-1 flex items-center gap-2">
                             <Package size={14} /> Itens Disponíveis
                         </h3>
-                        <span className="text-xs font-bold bg-slate-800 text-slate-400 px-2 py-1 rounded-lg">{filteredInventory.length}</span>
+                        <span className="text-xs font-bold bg-slate-800 text-slate-400 px-2 py-1 rounded-lg">{sortedInventory.length}</span>
                     </div>
 
-                    {loading ? <div className="text-center py-10 text-slate-600">Buscando estoque...</div> : (
+                    {loading ? <div className="text-center py-10 text-slate-600 font-bold">Buscando estoque...</div> : (
                         <div className="space-y-3">
-                            {filteredInventory.length === 0 && (
+                            {sortedInventory.length === 0 && (
                                 <div className="text-center py-10 border border-dashed border-slate-800 rounded-2xl">
                                     <Package size={32} className="mx-auto text-slate-700 mb-2" />
                                     <p className="text-slate-500 text-sm">Nenhum item encontrado.</p>
                                 </div>
                             )}
 
-                            {filteredInventory.map(item => {
+                            {sortedInventory.map(item => {
                                 const isLow = item.quantity <= item.min_threshold;
                                 return (
                                     <div key={item.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center relative overflow-hidden group">

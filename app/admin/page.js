@@ -66,7 +66,7 @@ export default function AdminPage() {
 
     // Forms de Criação
     const [showExpenseForm, setShowExpenseForm] = useState(false);
-    const [newAccount, setNewAccount] = useState({ name: '', type: 'banco', initial_balance: 0 });
+    const [newAccount, setNewAccount] = useState({ name: '', type: 'banco', initial_balance: 0, region_id: 'matriz' });
     const [newExpense, setNewExpense] = useState({ description: '', amount: '', category_id: '', account_id: '', region_id: selectedRegion === 'all' ? 'matriz' : selectedRegion, date: new Date().toISOString().slice(0, 10) });
     const [newCategory, setNewCategory] = useState('');
     const [newItem, setNewItem] = useState({ name: '', quantity: 0, min_threshold: 5 });
@@ -82,9 +82,77 @@ export default function AdminPage() {
     const [showAccountsSettings, setShowAccountsSettings] = useState(false);
     const [showRatesSettings, setShowRatesSettings] = useState(false);
     const [showCategoriesSettings, setShowCategoriesSettings] = useState(false);
+    const [ratesRegion, setRatesRegion] = useState('global');
+
+    // Metas
+    const [goalsMonth, setGoalsMonth] = useState(new Date().toISOString().slice(0, 7)); // YYYY-MM
+    const [editingGoals, setEditingGoals] = useState({}); // { regionSlug: goalAmount }
+    const [showGoalsSettings, setShowGoalsSettings] = useState(false);
 
     useEffect(() => { loadRegions(); }, []);
     useEffect(() => { fetchData(); }, [selectedRegion, activeTab, selectedMonth]);
+
+    useEffect(() => {
+        if (activeTab === 'configuracoes' && regions.length > 0) {
+            fetchGoalsForMonth(goalsMonth);
+        }
+    }, [activeTab, goalsMonth, regions]);
+
+    async function fetchGoalsForMonth(m) {
+        const { data: currentGoals } = await supabase
+            .from('regional_goals')
+            .select('*')
+            .eq('month', m);
+
+        const goalsMap = {};
+        const activeRegions = regions.filter(r => r.slug !== 'matriz');
+        activeRegions.forEach(r => {
+            goalsMap[r.slug] = 0;
+        });
+
+        if (currentGoals && currentGoals.length > 0) {
+            currentGoals.forEach(g => {
+                goalsMap[g.region_id] = g.goal_amount;
+            });
+            setEditingGoals(goalsMap);
+        } else {
+            const fallbackMap = { ...goalsMap };
+            for (const r of activeRegions) {
+                const { data: prevGoal } = await supabase
+                    .from('regional_goals')
+                    .select('goal_amount')
+                    .eq('region_id', r.slug)
+                    .lt('month', m)
+                    .order('month', { ascending: false })
+                    .limit(1);
+
+                if (prevGoal && prevGoal.length > 0) {
+                    fallbackMap[r.slug] = prevGoal[0].goal_amount;
+                }
+            }
+            setEditingGoals(fallbackMap);
+        }
+    }
+
+    async function handleSaveGoals(e) {
+        e.preventDefault();
+        const upsertData = Object.entries(editingGoals).map(([region_id, goal_amount]) => ({
+            region_id,
+            month: goalsMonth,
+            goal_amount: Number(goal_amount) || 0
+        }));
+
+        const { error } = await supabase
+            .from('regional_goals')
+            .upsert(upsertData, { onConflict: 'region_id,month' });
+
+        if (error) {
+            alert('Erro ao salvar metas: ' + error.message);
+        } else {
+            alert('Metas salvas com sucesso para o mês ' + goalsMonth + '!');
+            fetchGoalsForMonth(goalsMonth);
+        }
+    }
 
     async function loadRegions() {
         const { data } = await supabase.from('regions').select('*');
@@ -168,6 +236,7 @@ export default function AdminPage() {
         if (modalType === 'appointment') table = 'appointments';
         if (modalType === 'expense') table = 'expenses';
         if (modalType === 'installer') table = 'profiles';
+        if (modalType === 'account') table = 'accounts';
 
         const payload = { ...editingItem };
 
@@ -223,7 +292,8 @@ export default function AdminPage() {
             }
         }
 
-        const fieldsToDelete = ['expense_categories', 'label', 'type', 'val', 'desc', 'email', 'account_name', 'account_region', 'is_primary', '_new_account_id', '_new_account_id_2'];
+        const fieldsToDelete = ['expense_categories', 'label', 'val', 'desc', 'email', 'account_name', 'account_region', 'is_primary', '_new_account_id', '_new_account_id_2'];
+        if (modalType !== 'account') fieldsToDelete.push('type');
         if (table !== 'expenses') fieldsToDelete.push('date');
         if (payload.region_id === 'matriz') payload.region_id = null;
         fieldsToDelete.forEach(f => delete payload[f]);
@@ -236,9 +306,10 @@ export default function AdminPage() {
     // --- FINANCEIRO ---
     async function handleAddAccount(e) {
         e.preventDefault();
-        const regionToSave = newAccount.type === 'banco' ? null : (selectedRegion === 'all' ? 'divinopolis' : selectedRegion);
-        const { error } = await supabase.from('accounts').insert([{ ...newAccount, region_id: regionToSave, balance: newAccount.initial_balance }]);
-        if (!error) { setNewAccount({ name: '', type: 'banco', initial_balance: 0 }); fetchData(); alert('Conta criada!'); }
+        const regionToSave = newAccount.region_id === 'matriz' ? null : newAccount.region_id;
+        const { region_id, ...accountFields } = newAccount;
+        const { error } = await supabase.from('accounts').insert([{ ...accountFields, region_id: regionToSave, balance: newAccount.initial_balance }]);
+        if (!error) { setNewAccount({ name: '', type: 'banco', initial_balance: 0, region_id: 'matriz' }); fetchData(); alert('Conta criada!'); }
     }
 
     async function handleTransfer(e) {
@@ -271,7 +342,32 @@ export default function AdminPage() {
 
     async function handleAddCategory(e) { e.preventDefault(); await supabase.from('expense_categories').insert([{ name: newCategory }]); setNewCategory(''); fetchData(); }
     async function handleSetDefault(id) { await supabase.from('accounts').update({ is_default: false }).is('region_id', null); await supabase.from('accounts').update({ is_default: true }).eq('id', id); fetchData(); }
-    async function handleUpdateRate(rate) { await supabase.from('payment_rates').update({ rate_percent: rate.rate_percent }).eq('id', rate.id); setEditingRate(null); fetchData(); }
+    async function handleUpdateRate(rate) {
+        const { error } = await supabase.from('payment_rates').update({ rate_percent: Number(rate.rate_percent) }).eq('id', rate.id);
+        if (error) {
+            alert('Erro ao atualizar taxa: ' + error.message);
+        } else {
+            setEditingRate(null);
+            fetchData();
+        }
+    }
+    async function handleInitializeRates() {
+        const defaultRates = rates.filter(r => !r.region_id);
+        if (defaultRates.length === 0) {
+            alert('Nenhuma taxa padrão cadastrada para copiar.');
+            return;
+        }
+        const newRatesPayload = defaultRates.map(r => ({
+            method: r.method,
+            installments: r.installments,
+            rate_percent: r.rate_percent,
+            days_to_receive: r.days_to_receive,
+            region_id: ratesRegion === 'global' ? null : ratesRegion
+        }));
+        const { error } = await supabase.from('payment_rates').insert(newRatesPayload);
+        if (error) { alert('Erro ao inicializar taxas: ' + error.message); }
+        else { alert('Taxas inicializadas com sucesso para a regional!'); fetchData(); }
+    }
     async function handleAddInventory(e) { e.preventDefault(); const reg = selectedRegion === 'all' ? 'divinopolis' : selectedRegion; await supabase.from('inventory').insert([{ ...newItem, region_id: reg }]); setNewItem({ name: '', quantity: 0, min_threshold: 5 }); setShowAddForm(false); fetchData(); }
     async function handleUpdateInventory(id) { await supabase.from('inventory').update({ quantity: editInvForm.quantity }).eq('id', id); setIsEditingInv(null); fetchData(); }
     async function handleLogout() { await supabase.auth.signOut(); router.push('/login'); }
@@ -575,6 +671,7 @@ export default function AdminPage() {
                                                                 <tr>
                                                                     <th className="p-4">Data/Hora</th>
                                                                     <th className="p-4">Cliente / Veículo</th>
+                                                                    <th className="p-4">Cidade</th>
                                                                     <th className="p-4">Serviço / Valor</th>
                                                                     <th className="p-4">Local</th>
                                                                     <th className="p-4 text-center">Ações</th>
@@ -582,7 +679,7 @@ export default function AdminPage() {
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
                                                                 {filteredFutureAppointments.length === 0 ? (
-                                                                    <tr><td colSpan="5" className="p-8 text-center text-slate-500">Nenhum agendamento encontrado para este filtro.</td></tr>
+                                                                    <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum agendamento encontrado para este filtro.</td></tr>
                                                                 ) : filteredFutureAppointments.map(a => (
                                                                     <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
@@ -592,6 +689,9 @@ export default function AdminPage() {
                                                                         <td className="p-4">
                                                                             <p className="font-bold text-slate-800">{a.customer_name}</p>
                                                                             <p className="text-xs text-slate-500">{a.vehicle_model} {a.vehicle_year && `(${a.vehicle_year})`}</p>
+                                                                        </td>
+                                                                        <td className="p-4 text-slate-600">
+                                                                            {a.calendar_name || '-'}
                                                                         </td>
                                                                         <td className="p-4">
                                                                             <p className="text-slate-700">{a.service_type || 'Instalação'}</p>
@@ -624,6 +724,7 @@ export default function AdminPage() {
                                                                 <tr>
                                                                     <th className="p-4">Concluído Em</th>
                                                                     <th className="p-4">Cliente / Veículo</th>
+                                                                    <th className="p-4">Cidade</th>
                                                                     <th className="p-4">Revestimento</th>
                                                                     <th className="p-4">Pagamento</th>
                                                                     <th className="p-4 text-center">Ações</th>
@@ -631,7 +732,7 @@ export default function AdminPage() {
                                                             </thead>
                                                             <tbody className="divide-y divide-gray-100">
                                                                 {filteredAppointments.length === 0 ? (
-                                                                    <tr><td colSpan="5" className="p-8 text-center text-slate-500">Nenhum atendimento realizado encontrado para este filtro.</td></tr>
+                                                                    <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum atendimento realizado encontrado para este filtro.</td></tr>
                                                                 ) : filteredAppointments.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at)).map(a => (
                                                                     <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
@@ -641,6 +742,9 @@ export default function AdminPage() {
                                                                         <td className="p-4">
                                                                             <p className="font-bold text-slate-800">{a.customer_name}</p>
                                                                             <p className="text-xs text-slate-500 capitalize">{a.vehicle_model} • {a.region_id}</p>
+                                                                        </td>
+                                                                        <td className="p-4 text-slate-600">
+                                                                            {a.calendar_name || '-'}
                                                                         </td>
                                                                         <td className="p-4 text-slate-600">
                                                                             {inventory.find(i => i.id === a.material_used_id)?.name || '-'}
@@ -733,7 +837,7 @@ export default function AdminPage() {
                                                             {regions.map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}
                                                         </select>
                                                     )}
-                                                </div>
+                                                        </div>
                                             )}
                                         </div>
                                         <div className="overflow-x-auto w-full">
@@ -743,8 +847,10 @@ export default function AdminPage() {
                                                         <th className="p-4">Data</th>
                                                         <th className="p-4 w-48 max-w-xs">Descrição</th>
                                                         <th className="p-4 text-right">Valor</th>
+                                                        <th className="p-4">Forma de Pagamento</th>
+                                                        <th className="p-4 text-right">Valor Líquido</th>
                                                         <th className="p-4">Conta</th>
-                                                        {selectedRegion === 'all' && <th className="p-4">Regional</th>}
+                                                        <th className="p-4">Cidade</th>
                                                         <th className="p-4 text-center">Ações</th>
                                                     </tr>
                                                 </thead>
@@ -757,6 +863,8 @@ export default function AdminPage() {
                                                                 type: 'in',
                                                                 date: a.completed_at,
                                                                 val: a.gross_amount,
+                                                                net_val: a.net_amount,
+                                                                city: a.calendar_name,
                                                                 label: `${a.vehicle_model} - ${a.customer_name}`,
                                                                 account_name: primaryAccount?.name || 'Conta Removida',
                                                                 account_region: primaryAccount?.region_id,
@@ -769,6 +877,9 @@ export default function AdminPage() {
                                                                     type: 'in',
                                                                     date: a.completed_at,
                                                                     val: a.gross_amount_2,
+                                                                    net_val: a.net_amount_2,
+                                                                    payment_method: a.payment_method_2,
+                                                                    city: a.calendar_name,
                                                                     label: `${a.vehicle_model} - ${a.customer_name} (Pagto 2)`,
                                                                     account_name: secondaryAccount?.name || 'Conta Removida',
                                                                     account_region: secondaryAccount?.region_id,
@@ -785,6 +896,8 @@ export default function AdminPage() {
                                                                 type: 'out',
                                                                 date: e.date,
                                                                 val: e.amount,
+                                                                net_val: e.amount,
+                                                                city: '',
                                                                 label: e.description,
                                                                 account_name: expAccount?.name || 'Conta Excluída',
                                                                 account_region: expAccount?.region_id
@@ -815,12 +928,18 @@ export default function AdminPage() {
                                                             <td className={`p-4 text-right font-bold ${t.type === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
                                                                 {t.type === 'in' ? '+' : '-'} R$ {Number(t.val).toFixed(2)}
                                                             </td>
+                                                            <td className="p-4 capitalize text-slate-600 font-medium">
+                                                                {t.type === 'in' ? (t.payment_method || '-') : '-'}
+                                                            </td>
+                                                            <td className={`p-4 text-right font-bold ${t.type === 'in' ? 'text-blue-600' : 'text-red-600'}`}>
+                                                                {t.type === 'in' ? '+' : '-'} R$ {Number(t.net_val ?? t.val).toFixed(2)}
+                                                            </td>
                                                             <td className="p-4">
                                                                 <span className="text-[10px] font-bold uppercase px-2 py-1 rounded bg-slate-100 text-slate-600 border border-slate-200">
                                                                     {t.account_name}
                                                                 </span>
                                                             </td>
-                                                            {selectedRegion === 'all' && <td className="p-4 text-slate-500 uppercase text-xs">{t.account_region || t.region_id || 'Global'}</td>}
+                                                            <td className="p-4 text-slate-600">{t.city || '-'}</td>
                                                             <td className="p-4 text-center">
                                                                 <div className="flex justify-center gap-2">
                                                                     <button onClick={() => openEditModal(t.type === 'in' ? 'appointment' : 'expense', t)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded"><Pencil size={16} /></button>
@@ -880,10 +999,10 @@ export default function AdminPage() {
                                                 </button>
                                                 {showAccountsSettings && (
                                                     <div className="p-6 pt-0 border-t border-gray-100">
-                                                        <div className="space-y-3 mb-6">{accounts.map(acc => (<div key={acc.id} className={`flex justify-between items-center p-3 rounded-xl border transition-all ${acc.is_default ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-300'}`}><div className="flex items-center gap-3">{acc.type === 'banco' && (<button onClick={() => handleSetDefault(acc.id)} className={`p-1.5 rounded-full transition-colors ${acc.is_default ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400 hover:text-yellow-500'}`}><Star size={16} fill={acc.is_default ? "currentColor" : "none"} /></button>)}{acc.type === 'carteira' && <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600"><Wallet size={14} /></div>}<div><p className={`font-bold text-sm ${acc.is_default ? 'text-blue-800' : 'text-slate-700'}`}>{acc.name} {acc.is_default && <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded ml-1 font-bold">PADRÃO</span>}</p><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{acc.type === 'banco' ? 'Global' : `Regional ${acc.region_id || ''}`}</p></div></div><button onClick={() => handleDelete('accounts', acc.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></div>))}</div>
+                                                        <div className="space-y-3 mb-6">{accounts.map(acc => (<div key={acc.id} className={`flex justify-between items-center p-3 rounded-xl border transition-all ${acc.is_default ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-300'}`}><div className="flex items-center gap-3">{acc.type === 'banco' && (<button onClick={() => handleSetDefault(acc.id)} className={`p-1.5 rounded-full transition-colors ${acc.is_default ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400 hover:text-yellow-500'}`}><Star size={16} fill={acc.is_default ? "currentColor" : "none"} /></button>)}{acc.type === 'carteira' && <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600"><Wallet size={14} /></div>}<div><p className={`font-bold text-sm ${acc.is_default ? 'text-blue-800' : 'text-slate-700'}`}>{acc.name} {acc.is_default && <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded ml-1 font-bold">PADRÃO</span>}</p><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{acc.region_id ? `Regional ${acc.region_id}` : 'Global'}</p></div></div><div className="flex items-center"><button onClick={() => openEditModal('account', acc)} className="text-slate-300 hover:text-blue-500 p-2 transition-colors mr-1"><Pencil size={16} /></button><button onClick={() => handleDelete('accounts', acc.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></div></div>))}</div>
                                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                                                             <h5 className="font-bold text-slate-700 text-xs uppercase tracking-wide mb-3">Nova Conta</h5>
-                                                            <form onSubmit={handleAddAccount} className="space-y-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nome da Instituição</label><input className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" required value={newAccount.name} onChange={e => setNewAccount({ ...newAccount, name: e.target.value })} placeholder="Ex: Nubank / Caixa Físico" /></div><div className="grid grid-cols-2 gap-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Tipo de Conta</label><select className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" value={newAccount.type} onChange={e => setNewAccount({ ...newAccount, type: e.target.value })}><option value="banco">Banco Global</option><option value="carteira">Caixa Regional</option></select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm" value={newAccount.initial_balance} onChange={e => setNewAccount({ ...newAccount, initial_balance: e.target.value })} placeholder="Saldo Inicial..." /></div></div><button className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-slate-700 transition-colors">Criar Conta</button></form>
+                                                            <form onSubmit={handleAddAccount} className="space-y-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nome da Instituição</label><input className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" required value={newAccount.name} onChange={e => setNewAccount({ ...newAccount, name: e.target.value })} placeholder="Ex: Nubank / Caixa Físico" /></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Tipo de Conta</label><select className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" value={newAccount.type} onChange={e => setNewAccount({ ...newAccount, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Região</label><select className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" value={newAccount.region_id || 'matriz'} onChange={e => setNewAccount({ ...newAccount, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm" value={newAccount.initial_balance} onChange={e => setNewAccount({ ...newAccount, initial_balance: e.target.value })} placeholder="Saldo Inicial..." /></div></div><button className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-slate-700 transition-colors">Criar Conta</button></form>
                                                         </div>
                                                     </div>
                                                 )}
@@ -895,11 +1014,33 @@ export default function AdminPage() {
                                                     <h4 className="font-bold text-slate-800 flex items-center gap-2"><Settings size={18} className="text-slate-400" /> Taxas da Maquininha</h4>
                                                     <ChevronDown size={20} className={`text-slate-400 transition-transform ${showRatesSettings ? 'rotate-180' : ''}`} />
                                                 </button>
-                                                {showRatesSettings && (
-                                                    <div className="p-6 pt-0 border-t border-gray-100">
-                                                        <div className="overflow-hidden rounded-xl border border-gray-100"><table className="w-full text-sm"><thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="p-3 text-left">Parcelamento</th><th className="p-3 text-right">Taxa (%)</th></tr></thead><tbody className="divide-y divide-gray-100">{rates.map(rate => (<tr key={rate.id} className="hover:bg-slate-50 transition-colors"><td className="p-3 font-medium text-slate-700 capitalize">{rate.method} {rate.installments > 1 && `${rate.installments}x`}</td><td className="p-3 text-right">{editingRate?.id === rate.id ? (<div className="flex justify-end gap-2"><input className="w-16 p-1 border border-blue-300 rounded text-center font-bold text-blue-600 outline-none" type="number" step="0.01" autoFocus value={editingRate.rate_percent} onChange={e => setEditingRate({ ...editingRate, rate_percent: e.target.value })} /><button onClick={() => handleUpdateRate(editingRate)} className="text-emerald-600 font-bold hover:text-emerald-700 text-xs">OK</button></div>) : (<button onClick={() => setEditingRate(rate)} className="text-slate-500 hover:text-blue-600 font-bold transition-colors border-b border-dashed border-slate-300 hover:border-blue-400">{rate.rate_percent}%</button>)}</td></tr>))}</tbody></table></div>
-                                                    </div>
-                                                )}
+                                                {showRatesSettings && (() => {
+                                                    const filteredRatesSetting = rates.filter(r => {
+                                                        if (ratesRegion === 'global') return !r.region_id;
+                                                        return r.region_id === ratesRegion;
+                                                    });
+                                                    return (
+                                                        <div className="p-6 pt-0 border-t border-gray-100 space-y-4">
+                                                            <div className="flex items-center justify-between gap-4 mt-4">
+                                                                <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Filtrar por Regional:</label>
+                                                                <select className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none" value={ratesRegion} onChange={e => setRatesRegion(e.target.value)}>
+                                                                    <option value="global">Taxas Gerais (Padrão)</option>
+                                                                    {regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}
+                                                                </select>
+                                                            </div>
+                                                            {filteredRatesSetting.length === 0 ? (
+                                                                <div className="p-6 text-center bg-slate-50 rounded-xl border border-dashed border-slate-300">
+                                                                    <p className="text-sm text-slate-500 mb-4">Esta regional não possui taxas de maquininha configuradas. Deseja copiar as taxas padrão global?</p>
+                                                                    <button onClick={handleInitializeRates} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl text-sm transition-colors">
+                                                                        Copiar Taxas Padrão
+                                                                    </button>
+                                                                </div>
+                                                            ) : (
+                                                                <div className="overflow-hidden rounded-xl border border-gray-100"><table className="w-full text-sm"><thead className="bg-slate-50 text-slate-500 font-medium"><tr><th className="p-3 text-left">Parcelamento</th><th className="p-3 text-right">Taxa (%)</th></tr></thead><tbody className="divide-y divide-gray-100">{filteredRatesSetting.map(rate => (<tr key={rate.id} className="hover:bg-slate-50 transition-colors"><td className="p-3 font-medium text-slate-700 capitalize">{rate.method} {rate.installments > 1 && `${rate.installments}x`}</td><td className="p-3 text-right">{editingRate?.id === rate.id ? (<div className="flex justify-end gap-2"><input className="w-16 p-1 border border-blue-300 rounded text-center font-bold text-blue-600 outline-none" type="number" step="0.01" autoFocus value={editingRate.rate_percent} onChange={e => setEditingRate({ ...editingRate, rate_percent: e.target.value })} /><button onClick={() => handleUpdateRate(editingRate)} className="text-emerald-600 font-bold hover:text-emerald-700 text-xs">OK</button></div>) : (<button onClick={() => setEditingRate(rate)} className="text-slate-500 hover:text-blue-600 font-bold transition-colors border-b border-dashed border-slate-300 hover:border-blue-400">{rate.rate_percent}%</button>)}</td></tr>))}</tbody></table></div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })()}
                                             </div>
 
                                             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -910,6 +1051,47 @@ export default function AdminPage() {
                                                 {showCategoriesSettings && (
                                                     <div className="p-6 pt-0 border-t border-gray-100">
                                                         <div className="flex gap-2 mb-4"><input className="flex-1 p-2 border rounded-lg text-sm bg-slate-50" placeholder="Nova Categoria..." value={newCategory} onChange={e => setNewCategory(e.target.value)} /><button onClick={handleAddCategory} className="bg-blue-600 text-white px-4 rounded-lg font-bold text-sm">Add</button></div><div className="flex flex-wrap gap-2">{categories.map(c => <span key={c.id} className="bg-slate-100 border border-slate-200 text-slate-700 px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-2">{c.name} <button onClick={() => handleDelete('expense_categories', c.id)} className="text-slate-400 hover:text-red-500 bg-white p-0.5 rounded shadow-sm"><X size={12} /></button></span>)}</div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+                                                <button onClick={() => setShowGoalsSettings(!showGoalsSettings)} className="w-full p-6 flex justify-between items-center bg-white hover:bg-slate-50 transition-colors">
+                                                    <h4 className="font-bold text-slate-800 flex items-center gap-2"><Trophy size={18} className="text-yellow-500" /> Metas Mensais</h4>
+                                                    <ChevronDown size={20} className={`text-slate-400 transition-transform ${showGoalsSettings ? 'rotate-180' : ''}`} />
+                                                </button>
+                                                {showGoalsSettings && (
+                                                    <div className="p-6 pt-0 border-t border-gray-100 space-y-4">
+                                                        <div className="flex items-center justify-between gap-4 mt-4">
+                                                            <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Mês das Metas:</label>
+                                                            <input 
+                                                                type="month" 
+                                                                className="p-2 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none cursor-pointer font-bold" 
+                                                                value={goalsMonth} 
+                                                                onChange={e => setGoalsMonth(e.target.value)} 
+                                                            />
+                                                        </div>
+                                                        <form onSubmit={handleSaveGoals} className="space-y-4 pt-2">
+                                                            {regions.filter(r => r.slug !== 'matriz').map(r => (
+                                                                <div key={r.slug} className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                                                                    <span className="text-sm font-bold text-slate-700">{r.name}</span>
+                                                                    <div className="flex items-center gap-2">
+                                                                        <input 
+                                                                            type="number" 
+                                                                            className="w-24 p-2 bg-white border border-gray-200 rounded-lg text-sm text-right font-bold text-slate-700 outline-none focus:border-blue-500" 
+                                                                            min="0"
+                                                                            value={editingGoals[r.slug] ?? '0'} 
+                                                                            onChange={e => setEditingGoals({ ...editingGoals, [r.slug]: e.target.value })} 
+                                                                            placeholder="0"
+                                                                        />
+                                                                        <span className="text-xs font-medium text-slate-400">volantes</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                            <button type="submit" className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-slate-700 transition-colors">
+                                                                Salvar Metas
+                                                            </button>
+                                                        </form>
                                                     </div>
                                                 )}
                                             </div>
@@ -991,7 +1173,7 @@ export default function AdminPage() {
                         <p className="text-[10px] text-slate-500 bg-slate-100 p-2 rounded-lg leading-tight mt-2 border border-slate-200">Valores líquidos recalculam sozinhos. Alterar revestimento <strong className="text-emerald-600">agora atualiza o estoque</strong> automaticamente.</p>
                     </div>
                 </div>
-            )}{modalType === 'expense' && (<><div><label className="text-xs font-bold text-slate-500">Descrição</label><input className="w-full p-3 border rounded-xl" value={editingItem.description} onChange={e => setEditingItem({ ...editingItem, description: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Data</label><input type="date" className="w-full p-3 border rounded-xl" value={editingItem.date ? editingItem.date.slice(0, 10) : ''} onChange={e => setEditingItem({ ...editingItem, date: e.target.value + 'T12:00:00Z' })} /></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.amount} onChange={e => setEditingItem({ ...editingItem, amount: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Conta Origem</label><select className="w-full p-3 border rounded-xl" value={editingItem.account_id} onChange={e => setEditingItem({ ...editingItem, account_id: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div></>)}{modalType === 'installer' && (<><div><label className="text-xs font-bold text-slate-500">Nome Completo</label><input className="w-full p-3 border rounded-xl" value={editingItem.full_name || ''} onChange={e => setEditingItem({ ...editingItem, full_name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Padrão (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.commission_rate} onChange={e => setEditingItem({ ...editingItem, commission_rate: e.target.value })} /></div></>)}</div><div className="flex gap-3 mt-6"><button onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button><button onClick={(e) => { e.currentTarget.disabled = true; e.currentTarget.innerText = 'Salvando...'; handleSaveEdit(); }} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 disabled:opacity-50">Salvar Alterações</button></div></div></div>)
+            )}{modalType === 'expense' && (<><div><label className="text-xs font-bold text-slate-500">Descrição</label><input className="w-full p-3 border rounded-xl" value={editingItem.description} onChange={e => setEditingItem({ ...editingItem, description: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Data</label><input type="date" className="w-full p-3 border rounded-xl" value={editingItem.date ? editingItem.date.slice(0, 10) : ''} onChange={e => setEditingItem({ ...editingItem, date: e.target.value + 'T12:00:00Z' })} /></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.amount} onChange={e => setEditingItem({ ...editingItem, amount: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Conta Origem</label><select className="w-full p-3 border rounded-xl" value={editingItem.account_id} onChange={e => setEditingItem({ ...editingItem, account_id: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div></>)}{modalType === 'installer' && (<><div><label className="text-xs font-bold text-slate-500">Nome Completo</label><input className="w-full p-3 border rounded-xl" value={editingItem.full_name || ''} onChange={e => setEditingItem({ ...editingItem, full_name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Padrão (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.commission_rate} onChange={e => setEditingItem({ ...editingItem, commission_rate: e.target.value })} /></div></>)}{modalType === 'account' && (<><div><label className="text-xs font-bold text-slate-500">Nome da Conta</label><input className="w-full p-3 border rounded-xl" value={editingItem.name || ''} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Tipo de Conta</label><select className="w-full p-3 border rounded-xl" value={editingItem.type || 'banco'} onChange={e => setEditingItem({ ...editingItem, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500">Região</label><select className="w-full p-3 border rounded-xl" value={editingItem.region_id || 'matriz'} onChange={e => setEditingItem({ ...editingItem, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" value={editingItem.initial_balance || 0} onChange={e => setEditingItem({ ...editingItem, initial_balance: e.target.value })} /></div></>)}</div><div className="flex gap-3 mt-6"><button onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button><button onClick={(e) => { e.currentTarget.disabled = true; e.currentTarget.innerText = 'Salvando...'; handleSaveEdit(); }} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 disabled:opacity-50">Salvar Alterações</button></div></div></div>)
             }
             {showTransferModal && (<div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95"><h3 className="text-lg font-bold mb-4 text-slate-900 flex items-center gap-2"><ArrowRightLeft size={20} /> Transferência</h3><form onSubmit={handleTransfer} className="space-y-4"><div><label className="text-xs font-bold text-slate-500">De (Origem)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, from: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name} (R$ {Number(a.balance).toFixed(2)})</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Para (Destino)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, to: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, amount: e.target.value })} /></div><button className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-500 mt-2">Confirmar</button><button type="button" onClick={() => setShowTransferModal(false)} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Cancelar</button></form></div></div>)}
             {selectedTransaction && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200"><div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"><div className="p-5 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center gap-2"><Eye size={18} className="text-blue-400" /> Detalhes</h3><button onClick={() => setSelectedTransaction(null)} className="p-2 hover:bg-slate-700 rounded-full transition-colors"><X size={20} /></button></div><div className="overflow-y-auto p-6 space-y-6">{selectedTransaction.photo_url ? (<div className="rounded-2xl overflow-hidden border-4 border-slate-100 bg-slate-50 shadow-inner"><img src={selectedTransaction.photo_url} alt="Comprovante" className="w-full h-auto object-cover" /></div>) : <div className="h-32 bg-slate-50 rounded-2xl flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200"><Eye size={32} className="mb-2 opacity-50" /><span className="text-xs font-medium">Sem foto</span></div>}<div className="space-y-4"><div className="flex justify-between items-start border-b border-slate-100 pb-4"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Veículo / Cliente</p><p className="font-bold text-xl text-slate-900">{selectedTransaction.vehicle_model}</p><p className="text-sm text-slate-500">{selectedTransaction.customer_name}</p></div><div className="text-right"><p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Valor Bruto</p><p className="font-bold text-xl text-emerald-600">R$ {Number(selectedTransaction.gross_amount || selectedTransaction.amount).toFixed(2)}</p></div></div><div className="grid grid-cols-2 gap-4"><div className="bg-slate-50 p-3 rounded-xl"><p className="text-[10px] font-bold text-slate-400 uppercase">Método</p><p className="font-medium text-slate-700 capitalize">{selectedTransaction.payment_method}</p></div><div className="bg-slate-50 p-3 rounded-xl"><p className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</p><p className="font-medium text-slate-700">{selectedTransaction.installments}x</p></div>{selectedTransaction.net_amount && <div className="bg-blue-50 p-3 rounded-xl col-span-2 border border-blue-100"><p className="text-[10px] font-bold text-blue-400 uppercase">Líquido (Empresa)</p><p className="font-bold text-blue-700 text-lg">R$ {Number(selectedTransaction.net_amount).toFixed(2)}</p></div>}{selectedTransaction.commission_amount > 0 && <div className="bg-emerald-50 p-3 rounded-xl col-span-2 border border-emerald-100"><p className="text-[10px] font-bold text-emerald-500 uppercase">Comissão (Instalador)</p><p className="font-bold text-emerald-700 text-lg">R$ {Number(selectedTransaction.commission_amount).toFixed(2)}</p></div>}</div></div></div></div></div>)}
