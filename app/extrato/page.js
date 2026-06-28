@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
 import { Wallet, Calendar, TrendingUp, ListTodo, User, Package, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ExtratoPage() {
   const router = useRouter();
@@ -166,57 +167,59 @@ export default function ExtratoPage() {
           </div>
         )}
 
-        {/* Commissions Card */}
-        <div className="bg-gradient-to-br from-green-600 to-emerald-800 p-6 rounded-3xl shadow-xl shadow-green-900/20 text-white relative overflow-hidden">
-          <div className="relative z-10">
-            <p className="text-green-100 text-sm font-medium mb-1 flex items-center gap-2">
-              <Wallet size={16} />{' '}
-              {viewType === 'semanal'
-                ? 'Comissões da Semana'
-                : `Comissões em ${month.split('-')[1]}/${month.split('-')[0]}`}
-            </p>
-            <h2 className="text-4xl font-bold tracking-tight">R$ {totalCommission.toFixed(2)}</h2>
-            <p className="text-green-200 text-xs mt-2 opacity-80">{transactions.length} serviços realizados</p>
-          </div>
-          <TrendingUp className="absolute right-4 bottom-4 text-green-400 opacity-20" size={80} />
-        </div>
+        {loading ? (
+          <div className="text-center py-10 text-slate-600 font-bold mt-10">Calculando extrato...</div>
+        ) : (
+          <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.2 } } }} className="space-y-6">
+            {/* Commissions Card */}
+            <motion.div variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-gradient-to-br from-green-600 to-emerald-800 p-6 rounded-3xl shadow-xl shadow-green-900/20 text-white relative overflow-hidden">
+              <div className="relative z-10">
+                <p className="text-green-100 text-sm font-medium mb-1 flex items-center gap-2">
+                  <Wallet size={16} />{' '}
+                  {viewType === 'semanal'
+                    ? 'Comissões da Semana'
+                    : `Comissões em ${month.split('-')[1]}/${month.split('-')[0]}`}
+                </p>
+                <h2 className="text-4xl font-bold tracking-tight">R$ {totalCommission.toFixed(2)}</h2>
+                <p className="text-green-200 text-xs mt-2 opacity-80">{transactions.length} serviços realizados</p>
+              </div>
+              <TrendingUp className="absolute right-4 bottom-4 text-green-400 opacity-20" size={80} />
+            </motion.div>
 
-        {/* Transactions List */}
-        <div className="space-y-4">
-          <h3 className="font-bold text-slate-400 text-sm uppercase ml-1">
-            {viewType === 'semanal' ? 'Histórico da Semana' : 'Histórico do Mês'}
-          </h3>
+            {/* Transactions List */}
+            <div className="space-y-4">
+              <h3 className="font-bold text-slate-400 text-sm uppercase ml-1">
+                {viewType === 'semanal' ? 'Histórico da Semana' : 'Histórico do Mês'}
+              </h3>
 
-          {loading ? (
-            <div className="text-center py-10 text-slate-600 font-bold">Carregando...</div>
-          ) : (
-            <div className="space-y-3">
-              {transactions.length === 0 && (
-                <div className="text-center py-12 border border-dashed border-slate-800 rounded-3xl bg-slate-900/20">
-                  <p className="text-slate-500 text-sm">Nenhum serviço finalizado neste período.</p>
-                </div>
-              )}
-
-              {transactions.map((t) => (
-                <div key={t.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center shadow-md hover:border-slate-700 transition-colors">
-                  <div>
-                    <p className="font-bold text-white text-sm">{t.vehicle_model}</p>
-                    <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
-                      <Calendar size={10} /> {new Date(t.completed_at).toLocaleDateString()} •{' '}
-                      {new Date(t.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                    </p>
+              <div className="space-y-3">
+                {transactions.length === 0 && (
+                  <div className="text-center py-12 border border-dashed border-slate-800 rounded-3xl bg-slate-900/20">
+                    <p className="text-slate-500 text-sm">Nenhum serviço finalizado neste período.</p>
                   </div>
-                  <div className="text-right">
-                    <span className="block font-bold text-green-400">+ R$ {Number(t.commission_amount).toFixed(2)}</span>
-                    <span className="text-[10px] text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full uppercase mt-1 inline-block font-bold">
-                      Concluído
-                    </span>
-                  </div>
-                </div>
-              ))}
+                )}
+
+                {transactions.map((t) => (
+                  <motion.div variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} key={t.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center shadow-md hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="font-bold text-white text-sm">{t.vehicle_model}</p>
+                      <p className="text-xs text-slate-500 flex items-center gap-1 mt-1">
+                        <Calendar size={10} /> {new Date(t.completed_at).toLocaleDateString()} •{' '}
+                        {new Date(t.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="block font-bold text-green-400">+ R$ {Number(t.commission_amount).toFixed(2)}</span>
+                      <span className="text-[10px] text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full uppercase mt-1 inline-block font-bold">
+                        Concluído
+                      </span>
+                    </div>
+                  </motion.div>
+                ))}
+              </div>
             </div>
-          )}
-        </div>
+          </motion.div>
+        )}
       </main>
 
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-6 pt-2 px-6 z-40">

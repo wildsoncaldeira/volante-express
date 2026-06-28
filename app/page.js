@@ -274,10 +274,10 @@ function HomeContent() {
           </motion.div>
         )}
         {activeTab === 'agenda' && (
-          <motion.div key="agenda" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
+          <motion.div key="agenda" initial="hidden" animate="show" exit="exit" variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.2, staggerChildren: 0.2 } }, exit: { opacity: 0, y: -10, transition: { duration: 0.2 } } }} className="space-y-6">
             {/* CARD DE METAS */}
             {monthlyGoal > 0 && (
-              <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 relative overflow-hidden shadow-lg">
+              <motion.div variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-900 p-5 rounded-3xl border border-slate-800 relative overflow-hidden shadow-lg">
                 <div className="flex justify-between items-center mb-3">
                   <div>
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Trophy size={12} className="text-yellow-500" /> META DO MÊS</h4>
@@ -296,7 +296,7 @@ function HomeContent() {
                 <p className="text-xs text-slate-400 italic mt-3 flex items-center gap-1.5">
                   ✨ {motivationalMessage}
                 </p>
-              </div>
+              </motion.div>
             )}
 
             <div className="flex items-center justify-between"><h3 className="text-slate-400 text-xs font-bold uppercase tracking-wider flex items-center gap-2"><Calendar size={14} /> Serviços Pendentes</h3><span className="text-xs bg-slate-800 text-slate-500 px-2 py-1 rounded-lg">{appointments.length} itens</span></div>
@@ -333,7 +333,7 @@ function HomeContent() {
                   }
 
                   return (
-                    <motion.div key={app.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }} className="space-y-3">
+                    <motion.div key={app.id} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="space-y-3">
                       {showDivider && (
                         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-6 mb-2 border-l-2 border-blue-500 pl-2 text-left">
                           {dividerLabel}

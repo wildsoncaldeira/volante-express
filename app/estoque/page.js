@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { Package, Search, ListTodo, Wallet, User, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 export default function EstoquePage() {
     const router = useRouter();
@@ -117,7 +118,7 @@ export default function EstoquePage() {
                     </div>
 
                     {loading ? <div className="text-center py-10 text-slate-600 font-bold">Buscando estoque...</div> : (
-                        <div className="space-y-3">
+                        <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.2 } } }} className="space-y-3">
                             {sortedInventory.length === 0 && (
                                 <div className="text-center py-10 border border-dashed border-slate-800 rounded-2xl">
                                     <Package size={32} className="mx-auto text-slate-700 mb-2" />
@@ -128,7 +129,7 @@ export default function EstoquePage() {
                             {sortedInventory.map(item => {
                                 const isLow = item.quantity <= item.min_threshold;
                                 return (
-                                    <div key={item.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center relative overflow-hidden group">
+                                    <motion.div variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} key={item.id} className="bg-slate-900 p-4 rounded-2xl border border-slate-800 flex justify-between items-center relative overflow-hidden group">
                                         {isLow && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-amber-500"></div>}
 
                                         <div className={`pl-${isLow ? '2' : '0'}`}>
@@ -146,10 +147,10 @@ export default function EstoquePage() {
                                             </span>
                                             <span className="text-[10px] text-slate-500 font-medium uppercase">Unidades</span>
                                         </div>
-                                    </div>
+                                    </motion.div>
                                 );
                             })}
-                        </div>
+                        </motion.div>
                     )}
                 </div>
             </main>
