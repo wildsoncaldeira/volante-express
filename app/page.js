@@ -115,24 +115,44 @@ function HomeContent() {
     const completed = count || 0;
     setCompletedInRegion(completed);
 
+    let currentPercentage = 0;
     if (goalNum > 0) {
-      setGoalPercentage((completed / goalNum) * 100);
+      currentPercentage = (completed / goalNum) * 100;
+      setGoalPercentage(currentPercentage);
     } else {
       setGoalPercentage(0);
     }
 
-    // 3. Set random motivational message
-    const MOTIVATIONAL_MESSAGES = [
-      "Bora acelerar! Cada volante instalado nos deixa mais perto da meta!",
-      "Excelente trabalho! Continue focado e vamos bater essa meta juntos!",
-      "Foco total! O sucesso é a soma de pequenos esforços diários.",
-      "Mais um cliente satisfeito, mais um passo rumo à vitória!",
-      "A determinação de hoje é o resultado de amanhã. Vamos com tudo!",
-      "Trabalho em equipe faz o sonho funcionar. Foco na meta!",
-      "Falta pouco! Vamos fechar o mês com chave de ouro!"
-    ];
-    const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_MESSAGES.length);
-    setMotivationalMessage(MOTIVATIONAL_MESSAGES[randomIndex]);
+    // 3. Set random motivational message based on percentage
+    let messages = [];
+    if (currentPercentage <= 25) {
+      messages = [
+        "Bora acelerar! O mês apenas começou, vamos buscar o primeiro volante!",
+        "Excelente trabalho! Cada volante instalado nos deixa mais perto da meta."
+      ];
+    } else if (currentPercentage <= 50) {
+      messages = [
+        "Bom ritmo! Já estamos nos aproximando da metade, mantenha o foco!",
+        "Foco total! O sucesso é a soma de pequenos esforços diários."
+      ];
+    } else if (currentPercentage <= 75) {
+      messages = [
+        "Já passamos da metade! Continue firme para garantir o resultado!",
+        "Mais um cliente satisfeito, mais um passo rumo à vitória!"
+      ];
+    } else if (currentPercentage < 100) {
+      messages = [
+        "Falta muito pouco! Estamos na reta final para bater a meta!",
+        "A determinação de hoje é o resultado de amanhã. Vamos com tudo!"
+      ];
+    } else {
+      messages = [
+        "Sensacional! Meta batida com sucesso! Vamos continuar acelerando!",
+        "Trabalho em equipe faz o sonho funcionar. Parabéns pela meta alcançada!"
+      ];
+    }
+    const randomIndex = Math.floor(Math.random() * messages.length);
+    setMotivationalMessage(messages[randomIndex]);
   }
 
   async function fetchData(userId) {

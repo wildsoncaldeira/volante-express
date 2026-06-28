@@ -221,6 +221,24 @@ export default function AtendimentoPage({ params }) {
     } catch (error) { alert('Erro: ' + error.message); setSubmitting(false); }
   };
 
+  // Fix multiple payment rates bug: Deduplicate by finding the correct rates for the appointment's region
+  const creditRatesToDisplay = [];
+  if (!loading && appointment) {
+    const allCreditRates = rates.filter(r => r.method === 'credito');
+    // For each unique installment, prefer the regional rate, fallback to global
+    const uniqueInstallments = [...new Set(allCreditRates.map(r => r.installments))];
+    uniqueInstallments.forEach(inst => {
+      const regionalRate = allCreditRates.find(r => r.installments === inst && r.region_id === appointment.region_id);
+      const globalRate = allCreditRates.find(r => r.installments === inst && !r.region_id);
+      if (regionalRate) {
+        creditRatesToDisplay.push(regionalRate);
+      } else if (globalRate) {
+        creditRatesToDisplay.push(globalRate);
+      }
+    });
+    creditRatesToDisplay.sort((a, b) => a.installments - b.installments);
+  }
+
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-500">Carregando...</div>;
 
   return (
@@ -278,11 +296,11 @@ export default function AtendimentoPage({ params }) {
             <div className="animate-in fade-in slide-in-from-top-2">
               <label className="text-sm font-medium text-slate-400 ml-1 mb-2 block">Parcelamento Disponível {isSplitPayment ? "1" : ""}</label>
               <select className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none" value={installments} onChange={e => setInstallments(e.target.value)}>
-                {rates.filter(r => r.method === 'credito').sort((a, b) => a.installments - b.installments).map(r => (
+                {creditRatesToDisplay.map(r => (
                   <option key={r.id} value={r.installments}>{r.installments}x {amount ? `de R$ ${(amount / r.installments).toFixed(2)}` : ''}</option>
                 ))}
               </select>
-              {rates.filter(r => r.method === 'credito').length === 0 && <p className="text-red-400 text-xs mt-2">Sem taxas cadastradas no Admin.</p>}
+              {creditRatesToDisplay.length === 0 && <p className="text-red-400 text-xs mt-2">Sem taxas cadastradas no Admin.</p>}
             </div>
           )}
 
@@ -319,11 +337,11 @@ export default function AtendimentoPage({ params }) {
                 <div className="animate-in fade-in slide-in-from-top-2">
                   <label className="text-sm font-medium text-slate-400 ml-1 mb-2 block">Parcelamento Disponível 2</label>
                   <select className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none" value={installments2} onChange={e => setInstallments2(e.target.value)}>
-                    {rates.filter(r => r.method === 'credito').sort((a, b) => a.installments - b.installments).map(r => (
+                    {creditRatesToDisplay.map(r => (
                       <option key={r.id} value={r.installments}>{r.installments}x {amount2 ? `de R$ ${(amount2 / r.installments).toFixed(2)}` : ''}</option>
                     ))}
                   </select>
-                  {rates.filter(r => r.method === 'credito').length === 0 && <p className="text-red-400 text-xs mt-2">Sem taxas cadastradas no Admin.</p>}
+                  {creditRatesToDisplay.length === 0 && <p className="text-red-400 text-xs mt-2">Sem taxas cadastradas no Admin.</p>}
                 </div>
               )}
             </div>

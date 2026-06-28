@@ -6,7 +6,8 @@ import {
     TrendingDown, Filter, Settings, Trash2, Banknote, Calendar,
     Star, Package, Plus, Save, Eye, X, PieChart as PieIcon,
     BarChart3, Users, LayoutDashboard, LogOut, Wallet,
-    ArrowRightLeft, Pencil, TrendingUp, Smartphone, Trophy, ListTodo, Search, ChevronDown
+    ArrowRightLeft, Pencil, TrendingUp, Smartphone, Trophy, ListTodo, Search, ChevronDown, ChevronLeft, ChevronRight,
+    Maximize, Download
 } from 'lucide-react';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
@@ -89,8 +90,32 @@ export default function AdminPage() {
     const [editingGoals, setEditingGoals] = useState({}); // { regionSlug: goalAmount }
     const [showGoalsSettings, setShowGoalsSettings] = useState(false);
 
-    useEffect(() => { loadRegions(); }, []);
-    useEffect(() => { fetchData(); }, [selectedRegion, activeTab, selectedMonth]);
+    // Paginação e Filtros Expandidos
+    const [atmItemsPerPage, setAtmItemsPerPage] = useState(10);
+    const [atmCurrentPageRealizados, setAtmCurrentPageRealizados] = useState(1);
+    const [atmCurrentPageFuturos, setAtmCurrentPageFuturos] = useState(1);
+    const [atmSearchAllMonths, setAtmSearchAllMonths] = useState(false);
+
+    const [finItemsPerPage, setFinItemsPerPage] = useState(10);
+    const [finCurrentPage, setFinCurrentPage] = useState(1);
+
+    const [equipeViewType, setEquipeViewType] = useState('mensal'); // 'semanal' ou 'mensal'
+    const [equipeCurrentWeekDate, setEquipeCurrentWeekDate] = useState(new Date());
+
+    useEffect(() => { 
+        const checkAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                router.push('/login');
+            } else {
+                loadRegions();
+            }
+        };
+        checkAuth();
+    }, [router, supabase.auth]);
+    useEffect(() => { fetchData(); }, [selectedRegion, activeTab, selectedMonth, atmSearchAllMonths, equipeViewType, equipeCurrentWeekDate]);
+
+
 
     useEffect(() => {
         if (activeTab === 'configuracoes' && regions.length > 0) {
@@ -165,8 +190,25 @@ export default function AdminPage() {
     async function fetchData() {
         setLoading(true);
         const [ano, mes] = selectedMonth.split('-');
-        const startOfMonth = new Date(Number(ano), Number(mes) - 1, 1).toISOString();
-        const endOfMonth = new Date(Number(ano), Number(mes), 0, 23, 59, 59).toISOString();
+        
+        let startRange = new Date(Number(ano), Number(mes) - 1, 1).toISOString();
+        let endRange = new Date(Number(ano), Number(mes), 0, 23, 59, 59).toISOString();
+
+        if (activeTab === 'equipe' && equipeViewType === 'semanal') {
+            const current = new Date(equipeCurrentWeekDate);
+            const day = current.getDay();
+            const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+            const startW = new Date(current.setDate(diff));
+            startW.setHours(0, 0, 0, 0);
+            const endW = new Date(startW);
+            endW.setDate(startW.getDate() + 6);
+            endW.setHours(23, 59, 59, 999);
+            startRange = startW.toISOString();
+            endRange = endW.toISOString();
+        } else if (activeTab === 'atendimentos' && atmSearchAllMonths) {
+            startRange = null;
+            endRange = null;
+        }
 
         // 1. Contas (Carregue primeiro para usar no filtro das regionais)
         const { data: accsData } = await supabase.from('accounts').select('*').order('name');
@@ -174,7 +216,11 @@ export default function AdminPage() {
         setAccounts(accs);
 
         // 2. Instalações e Agendamentos Futuros
-        let appQuery = supabase.from('appointments').select('*').gte('appointment_at', startOfMonth).lte('appointment_at', endOfMonth);
+        let appQuery = supabase.from('appointments').select('*');
+        if (startRange && endRange) {
+            appQuery = appQuery.gte('appointment_at', startRange).lte('appointment_at', endRange);
+        }
+        
         let futureAppQuery = supabase.from('appointments').select('*')
             .neq('status', 'concluido')
             .neq('status', 'cancelado')
@@ -186,7 +232,10 @@ export default function AdminPage() {
         let futureApps = futureAppsData || [];
 
         // 3. Despesas
-        let expQuery = supabase.from('expenses').select('*, expense_categories(name)').gte('date', startOfMonth).lte('date', endOfMonth);
+        let expQuery = supabase.from('expenses').select('*, expense_categories(name)');
+        if (startRange && endRange) {
+            expQuery = expQuery.gte('date', startRange).lte('date', endRange);
+        }
         const { data: expsData } = await expQuery;
         let exps = expsData || [];
 
@@ -369,26 +418,33 @@ export default function AdminPage() {
         else { alert('Taxas inicializadas com sucesso para a regional!'); fetchData(); }
     }
     async function handleAddInventory(e) { e.preventDefault(); const reg = selectedRegion === 'all' ? 'divinopolis' : selectedRegion; await supabase.from('inventory').insert([{ ...newItem, region_id: reg }]); setNewItem({ name: '', quantity: 0, min_threshold: 5 }); setShowAddForm(false); fetchData(); }
-    async function handleUpdateInventory(id) { await supabase.from('inventory').update({ quantity: editInvForm.quantity }).eq('id', id); setIsEditingInv(null); fetchData(); }
+    async function handleUpdateInventory(id) { await supabase.from('inventory').update({ quantity: editInvForm.quantity, min_threshold: editInvForm.min_threshold }).eq('id', id); setIsEditingInv(null); fetchData(); }
     async function handleLogout() { await supabase.auth.signOut(); router.push('/login'); }
 
     // --- CÁLCULOS BI ---
     const dashboardStats = useMemo(() => {
-        const totalGross = appointments.reduce((acc, curr) => acc + (Number(curr.gross_amount) || Number(curr.amount) || 0), 0);
-        const totalNet = appointments.reduce((acc, curr) => acc + (Number(curr.net_amount) || Number(curr.amount) || 0), 0);
-        const totalExpense = expenses.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
-        const ticketMedio = appointments.length > 0 ? totalGross / appointments.length : 0;
+        const [ano, mes] = selectedMonth.split('-');
+        const startOfMonth = new Date(Number(ano), Number(mes) - 1, 1).toISOString();
+        const endOfMonth = new Date(Number(ano), Number(mes), 0, 23, 59, 59).toISOString();
+        const appsMonth = appointments.filter(a => a.appointment_at >= startOfMonth && a.appointment_at <= endOfMonth);
+        const expsMonth = expenses.filter(e => e.date >= startOfMonth && e.date <= endOfMonth);
+        const futureAppsMonth = futureAppointments.filter(a => a.appointment_at >= startOfMonth && a.appointment_at <= endOfMonth);
+
+        const totalGross = appsMonth.reduce((acc, curr) => acc + (Number(curr.gross_amount) || Number(curr.amount) || 0), 0);
+        const totalNet = appsMonth.reduce((acc, curr) => acc + (Number(curr.net_amount) || Number(curr.amount) || 0), 0);
+        const totalExpense = expsMonth.reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0);
+        const ticketMedio = appsMonth.length > 0 ? totalGross / appsMonth.length : 0;
 
         const incomeByMethod = {};
-        appointments.forEach(a => { const m = a.payment_method || 'Não Definido'; incomeByMethod[m] = (incomeByMethod[m] || 0) + (Number(a.gross_amount) || 0); });
+        appsMonth.forEach(a => { const m = a.payment_method || 'Não Definido'; incomeByMethod[m] = (incomeByMethod[m] || 0) + (Number(a.gross_amount) || 0); });
         const pieDataIncome = Object.keys(incomeByMethod).map(k => ({ name: k, value: incomeByMethod[k] }));
 
         const expByCat = {};
-        expenses.forEach(e => { const n = e.expense_categories?.name || 'Outros'; expByCat[n] = (expByCat[n] || 0) + Number(e.amount); });
+        expsMonth.forEach(e => { const n = e.expense_categories?.name || 'Outros'; expByCat[n] = (expByCat[n] || 0) + Number(e.amount); });
         const pieDataExpenses = Object.keys(expByCat).map(k => ({ name: k, value: expByCat[k] }));
 
         const rankingData = installers.map(inst => {
-            const myApps = appointments.filter(a => a.user_id === inst.id);
+            const myApps = appsMonth.filter(a => a.user_id === inst.id);
             const total = myApps.reduce((acc, curr) => acc + (Number(curr.gross_amount) || 0), 0);
             return { name: inst.full_name?.split(' ')[0] || 'User', total, count: myApps.length };
         }).sort((a, b) => b.total - a.total);
@@ -396,17 +452,34 @@ export default function AdminPage() {
         const daysInMonth = new Date(Number(selectedMonth.split('-')[0]), Number(selectedMonth.split('-')[1]), 0).getDate();
         const cashFlowData = Array.from({ length: daysInMonth }, (_, i) => {
             const d = i + 1;
-            const income = appointments.filter(a => new Date(a.completed_at).getDate() === d).reduce((acc, c) => acc + (Number(c.net_amount) || 0), 0);
-            const expense = expenses.filter(e => new Date(e.date).getDate() === d).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
+            const income = appsMonth.filter(a => new Date(a.completed_at).getDate() === d).reduce((acc, c) => acc + (Number(c.net_amount) || 0), 0);
+            const expense = expsMonth.filter(e => new Date(e.date).getDate() === d).reduce((acc, c) => acc + (Number(c.amount) || 0), 0);
             return { day: d, entrada: income, saida: expense };
         });
 
         const coatByCat = {};
-        appointments.forEach(a => {
+        appsMonth.forEach(a => {
             const matName = inventory.find(i => i.id === a.material_used_id)?.name || 'Outro / Avulso';
             coatByCat[matName] = (coatByCat[matName] || 0) + 1;
         });
         const pieDataCoatings = Object.keys(coatByCat).map(k => ({ name: k, value: coatByCat[k] })).sort((a, b) => b.value - a.value);
+
+        const cityByCount = {};
+        appsMonth.forEach(a => {
+            const cityName = a.calendar_name || 'Não informada';
+            cityByCount[cityName] = (cityByCount[cityName] || 0) + 1;
+        });
+        const pieDataCities = Object.keys(cityByCount).map(k => ({ name: k, value: cityByCount[k] })).sort((a, b) => b.value - a.value);
+
+        const daysOfWeekCount = { 'Segunda': 0, 'Terça': 0, 'Quarta': 0, 'Quinta': 0, 'Sexta': 0, 'Sábado': 0, 'Domingo': 0 };
+        appsMonth.forEach(a => {
+            if (a.completed_at) {
+                const dayNum = new Date(a.completed_at).getDay();
+                const daysMap = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+                daysOfWeekCount[daysMap[dayNum]]++;
+            }
+        });
+        const barDataWeekDays = Object.keys(daysOfWeekCount).map(k => ({ name: k, value: daysOfWeekCount[k] }));
 
         const hojeStr = new Date().toLocaleDateString();
         const ontemDate = new Date(); ontemDate.setDate(ontemDate.getDate() - 1);
@@ -415,10 +488,11 @@ export default function AdminPage() {
         return {
             totalGross, totalNet, totalExpense, profit: totalNet - totalExpense, ticketMedio,
             pieDataIncome, pieDataExpenses, rankingData, cashFlowData, pieDataCoatings,
-            feitosMes: appointments.length,
-            feitosHoje: appointments.filter(a => new Date(a.completed_at).toLocaleDateString() === hojeStr).length,
-            feitosOntem: appointments.filter(a => new Date(a.completed_at).toLocaleDateString() === ontemStr).length,
-            agendadosFuturo: futureAppointments.length
+            pieDataCities, barDataWeekDays,
+            feitosMes: appsMonth.length,
+            feitosHoje: appsMonth.filter(a => new Date(a.completed_at).toLocaleDateString() === hojeStr).length,
+            feitosOntem: appsMonth.filter(a => new Date(a.completed_at).toLocaleDateString() === ontemStr).length,
+            agendadosFuturo: futureAppsMonth.length
         };
     }, [appointments, expenses, installers, selectedMonth, futureAppointments, inventory]);
 
@@ -455,6 +529,140 @@ export default function AdminPage() {
             return matchesSearch && matchesRegion; // Future appointments don't have coatings/payments defined yet usually
         });
     }, [futureAppointments, atmSearchTerm, atmFilterRegion]);
+
+    const paginatedAppointments = useMemo(() => {
+        const startIndex = (atmCurrentPageRealizados - 1) * atmItemsPerPage;
+        return filteredAppointments.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at)).slice(startIndex, startIndex + atmItemsPerPage);
+    }, [filteredAppointments, atmCurrentPageRealizados, atmItemsPerPage]);
+
+    const paginatedFutureAppointments = useMemo(() => {
+        const startIndex = (atmCurrentPageFuturos - 1) * atmItemsPerPage;
+        return filteredFutureAppointments.slice(startIndex, startIndex + atmItemsPerPage);
+    }, [filteredFutureAppointments, atmCurrentPageFuturos, atmItemsPerPage]);
+
+    const filteredTransactions = useMemo(() => {
+        return [
+            ...appointments.flatMap(a => {
+                const primaryAccount = accounts.find(acc => acc.id === a.account_id);
+                const primary = {
+                    ...a,
+                    type: 'in',
+                    date: a.completed_at,
+                    val: a.gross_amount,
+                    net_val: a.net_amount,
+                    city: a.calendar_name,
+                    label: `${a.vehicle_model} - ${a.customer_name}`,
+                    account_name: primaryAccount?.name || 'Conta Removida',
+                    account_region: primaryAccount?.region_id,
+                    is_primary: true
+                };
+                if (a.is_split_payment) {
+                    const secondaryAccount = accounts.find(acc => acc.id === a.account_id_2);
+                    const secondary = {
+                        ...a,
+                        type: 'in',
+                        date: a.completed_at,
+                        val: a.gross_amount_2,
+                        net_val: a.net_amount_2,
+                        payment_method: a.payment_method_2,
+                        city: a.calendar_name,
+                        label: `${a.vehicle_model} - ${a.customer_name} (Pagto 2)`,
+                        account_name: secondaryAccount?.name || 'Conta Removida',
+                        account_region: secondaryAccount?.region_id,
+                        is_primary: false
+                    };
+                    return [primary, secondary];
+                }
+                return [primary];
+            }),
+            ...expenses.map(e => {
+                const expAccount = accounts.find(acc => acc.id === e.account_id);
+                return {
+                    ...e,
+                    type: 'out',
+                    date: e.date,
+                    val: e.amount,
+                    net_val: e.amount,
+                    city: '',
+                    label: e.description,
+                    account_name: expAccount?.name || 'Conta Excluída',
+                    account_region: expAccount?.region_id
+                };
+            })
+        ].sort((a, b) => new Date(b.date) - new Date(a.date)).filter(t => {
+            let matches = true;
+            if (finFilterType !== 'all' && t.type !== finFilterType) matches = false;
+            if (finFilterCategory !== 'all') {
+                if (t.type === 'in') matches = false; // Receitas não tem categoria (por enquanto)
+                else if (t.expense_categories?.name !== finFilterCategory) matches = false;
+            }
+            if (finFilterAccount !== 'all' && t.account_id !== finFilterAccount && t.account_id_2 !== finFilterAccount) matches = false;
+            if (selectedRegion === 'all' && finFilterRegion !== 'all' && (t.account_region || t.region_id) !== finFilterRegion) matches = false;
+            if (finSearchTerm) {
+                const term = finSearchTerm.toLowerCase();
+                const searchString = `${t.label} ${t.account_name} ${t.val}`.toLowerCase();
+                if (!searchString.includes(term)) matches = false;
+            }
+            return matches;
+        });
+    }, [appointments, expenses, accounts, finFilterType, finFilterCategory, finFilterAccount, finFilterRegion, finSearchTerm, selectedRegion]);
+
+    const paginatedTransactions = useMemo(() => {
+        const startIndex = (finCurrentPage - 1) * finItemsPerPage;
+        return filteredTransactions.slice(startIndex, startIndex + finItemsPerPage);
+    }, [filteredTransactions, finCurrentPage, finItemsPerPage]);
+
+    // Keyboard UX para Modais (Atendimentos e Financeiro)
+    useEffect(() => {
+        const handleKeyDown = (e) => {
+            // Ignorar setas se o foco estiver em um input (para não atrapalhar digitação)
+            if ((e.key.startsWith('Arrow')) && (document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'SELECT' || document.activeElement.tagName === 'TEXTAREA')) {
+                return;
+            }
+
+            // --- Modal de Atendimentos (Visualização) ---
+            if (selectedTransaction) {
+                if (e.key === 'Escape') {
+                    setSelectedTransaction(null);
+                    return;
+                }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    const sorted = [...filteredAppointments].sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+                    const idx = sorted.findIndex(a => a.id === selectedTransaction.id);
+                    if (idx !== -1 && idx < sorted.length - 1) setSelectedTransaction(sorted[idx + 1]);
+                }
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    const sorted = [...filteredAppointments].sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
+                    const idx = sorted.findIndex(a => a.id === selectedTransaction.id);
+                    if (idx > 0) setSelectedTransaction(sorted[idx - 1]);
+                }
+            }
+
+            // --- Modal de Edição (Financeiro) ---
+            if (showEditModal && editingItem && activeTab === 'financeiro') {
+                if (e.key === 'Escape') {
+                    setShowEditModal(false);
+                    return;
+                }
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    const idx = paginatedTransactions.findIndex(a => a.id === editingItem.id && a.is_primary === editingItem.is_primary);
+                    if (idx !== -1 && idx < paginatedTransactions.length - 1) {
+                        const nextItem = paginatedTransactions[idx + 1];
+                        openEditModal(nextItem.type === 'in' ? 'appointment' : 'expense', nextItem);
+                    }
+                }
+                if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    const idx = paginatedTransactions.findIndex(a => a.id === editingItem.id && a.is_primary === editingItem.is_primary);
+                    if (idx > 0) {
+                        const prevItem = paginatedTransactions[idx - 1];
+                        openEditModal(prevItem.type === 'in' ? 'appointment' : 'expense', prevItem);
+                    }
+                }
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedTransaction, filteredAppointments, showEditModal, editingItem, activeTab, paginatedTransactions]);
 
     // --- COMPONENTE BOTTOM NAV (QUE FALTAVA!) ---
     const BottomNav = () => (
@@ -609,6 +817,36 @@ export default function AdminPage() {
                                             </ResponsiveContainer>
                                         </div>
                                     </div>
+
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 items-start">
+                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
+                                            <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><PieIcon size={16} /> Atendimentos por Cidade</h4>
+                                            <ResponsiveContainer width="100%" height="90%">
+                                                <BarChart data={dashboardStats.pieDataCities} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
+                                                    <XAxis type="number" hide />
+                                                    <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                                    <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(value) => [`${value} (${dashboardStats.feitosMes ? ((value / dashboardStats.feitosMes) * 100).toFixed(1) : 0}%)`, 'Atendimentos']} />
+                                                    <Bar dataKey="value" radius={[0, 4, 4, 0]} barSize={24}>
+                                                        {dashboardStats.pieDataCities.map((entry, index) => (<Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
+                                            <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><BarChart3 size={16} /> Atendimentos por Dia da Semana</h4>
+                                            <ResponsiveContainer width="100%" height="90%">
+                                                <BarChart data={dashboardStats.barDataWeekDays} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
+                                                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                                                    <XAxis dataKey="name" tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                                    <YAxis tick={{ fontSize: 10, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                                                    <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(value) => [value, 'Atendimentos']} />
+                                                    <Bar dataKey="value" radius={[4, 4, 0, 0]} barSize={32}>
+                                                        {dashboardStats.barDataWeekDays.map((entry, index) => (<Cell key={`cell-${index}`} fill="#3b82f6" />))}
+                                                    </Bar>
+                                                </BarChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
                                 </>
                             )}
 
@@ -633,6 +871,9 @@ export default function AdminPage() {
                                                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
                                                     <input type="text" placeholder="Buscar Cliente ou Veículo..." value={atmSearchTerm} onChange={(e) => setAtmSearchTerm(e.target.value)} className="w-full pl-9 pr-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-slate-800 outline-none focus:border-blue-500" />
                                                 </div>
+                                                <button onClick={() => setAtmSearchAllMonths(!atmSearchAllMonths)} className={`p-2 rounded-lg border text-sm font-bold flex items-center gap-2 transition-colors ${atmSearchAllMonths ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-gray-200 text-slate-600 hover:bg-slate-50'}`}>
+                                                    Buscar Todos os Meses
+                                                </button>
                                                 <button onClick={() => setShowAtmFilters(!showAtmFilters)} className={`p-2 rounded-lg border flex items-center justify-center transition-colors ${showAtmFilters ? 'bg-blue-100 border-blue-200 text-blue-700' : 'bg-white border-gray-200 text-slate-600 hover:bg-slate-50'}`}>
                                                     <Filter size={18} />
                                                 </button>
@@ -666,7 +907,7 @@ export default function AdminPage() {
                                                 <div>
                                                     <h4 className="text-slate-600 font-bold mb-4 uppercase text-xs tracking-wider">Agendamentos Futuros</h4>
                                                     <div className="overflow-x-auto">
-                                                        <table className="w-full text-sm text-left">
+                                                        <table className="w-full text-sm text-left hidden md:table">
                                                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-gray-100">
                                                                 <tr>
                                                                     <th className="p-4">Data/Hora</th>
@@ -680,7 +921,7 @@ export default function AdminPage() {
                                                             <tbody className="divide-y divide-gray-100">
                                                                 {filteredFutureAppointments.length === 0 ? (
                                                                     <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum agendamento encontrado para este filtro.</td></tr>
-                                                                ) : filteredFutureAppointments.map(a => (
+                                                                ) : paginatedFutureAppointments.map(a => (
                                                                     <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
                                                                             {new Date(a.appointment_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} <br />
@@ -710,6 +951,54 @@ export default function AdminPage() {
                                                                 ))}
                                                             </tbody>
                                                         </table>
+
+                                                        {/* Mobile Cards para Atendimentos Futuros */}
+                                                        <div className="md:hidden flex flex-col gap-4 mt-2">
+                                                            {filteredFutureAppointments.length === 0 ? (
+                                                                <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhum atendimento agendado encontrado.</div>
+                                                            ) : paginatedFutureAppointments.map(a => (
+                                                                <div key={`mob-fut-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                                    <div className="flex justify-between items-start border-b border-slate-100 pb-2">
+                                                                        <div>
+                                                                            <p className="font-bold text-slate-800 leading-tight">{a.customer_name}</p>
+                                                                            <p className="text-[11px] text-slate-500 capitalize">{a.vehicle_model}{a.vehicle_year ? ` (${a.vehicle_year})` : ''}</p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="font-medium text-slate-700 text-xs">{new Date(a.appointment_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
+                                                                            <p className="text-[10px] text-slate-500">{new Date(a.appointment_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center text-xs mt-1 gap-3">
+                                                                        <div className="flex-1 space-y-1 bg-slate-50 border border-slate-200 shadow-sm rounded-lg p-2">
+                                                                            <div>
+                                                                                <span className="text-[9px] uppercase text-slate-400 font-bold block">Cidade</span>
+                                                                                <span className="text-slate-600 text-xs break-words leading-tight block">{a.calendar_name || '-'}</span>
+                                                                            </div>
+                                                                            <div className="flex justify-between font-medium text-slate-600 pt-1 border-t border-slate-200 mt-1">
+                                                                                <span className="capitalize">Valor</span>
+                                                                                <span className="text-emerald-600 font-bold">R$ {Number(a.gross_amount).toFixed(2)}</span>
+                                                                            </div>
+                                                                        </div>
+                                                                        <div className="flex shrink-0 gap-1 items-center">
+                                                                            <button onClick={() => openEditModal('appointment', a)} className="p-2 text-blue-500 bg-white hover:bg-blue-50 rounded-lg border border-slate-200 shadow-sm"><Pencil size={14}/></button>
+                                                                            <button onClick={() => handleDelete('appointments', a.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-4">
+                                                        <select value={atmItemsPerPage} onChange={(e) => { setAtmItemsPerPage(Number(e.target.value)); setAtmCurrentPageFuturos(1); setAtmCurrentPageRealizados(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
+                                                            <option value={10}>10 por página</option>
+                                                            <option value={50}>50 por página</option>
+                                                            <option value={100}>100 por página</option>
+                                                        </select>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => setAtmCurrentPageFuturos(p => Math.max(1, p - 1))} disabled={atmCurrentPageFuturos === 1} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Anterior</button>
+                                                            <span className="px-3 py-1 text-sm text-slate-600 font-medium">Página {atmCurrentPageFuturos} de {Math.ceil(filteredFutureAppointments.length / atmItemsPerPage) || 1}</span>
+                                                            <button onClick={() => setAtmCurrentPageFuturos(p => p + 1)} disabled={atmCurrentPageFuturos >= Math.ceil(filteredFutureAppointments.length / atmItemsPerPage)} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Próxima</button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}
@@ -719,7 +1008,7 @@ export default function AdminPage() {
                                                 <div>
                                                     <h4 className="text-slate-600 font-bold mb-4 uppercase text-xs tracking-wider">Atendimentos Realizados</h4>
                                                     <div className="overflow-x-auto">
-                                                        <table className="w-full text-sm text-left">
+                                                        <table className="w-full text-sm text-left hidden md:table">
                                                             <thead className="bg-slate-50 text-slate-500 font-medium border-b border-gray-100">
                                                                 <tr>
                                                                     <th className="p-4">Concluído Em</th>
@@ -733,7 +1022,7 @@ export default function AdminPage() {
                                                             <tbody className="divide-y divide-gray-100">
                                                                 {filteredAppointments.length === 0 ? (
                                                                     <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum atendimento realizado encontrado para este filtro.</td></tr>
-                                                                ) : filteredAppointments.sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at)).map(a => (
+                                                                ) : paginatedAppointments.map(a => (
                                                                     <tr key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
                                                                             {new Date(a.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} <br />
@@ -774,6 +1063,67 @@ export default function AdminPage() {
                                                                 ))}
                                                             </tbody>
                                                         </table>
+
+                                                        {/* Mobile Cards para Atendimentos Realizados */}
+                                                        <div className="md:hidden flex flex-col gap-4 mt-2">
+                                                            {filteredAppointments.length === 0 ? (
+                                                                <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhum atendimento realizado encontrado para este filtro.</div>
+                                                            ) : paginatedAppointments.map(a => (
+                                                                <div key={`mob-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                                    <div className="flex justify-between items-start border-b border-slate-100 pb-2">
+                                                                        <div>
+                                                                            <p className="font-bold text-slate-800 leading-tight">{a.customer_name}</p>
+                                                                            <p className="text-[11px] text-slate-500 capitalize">{a.vehicle_model}{a.vehicle_year ? ` (${a.vehicle_year})` : ''}</p>
+                                                                        </div>
+                                                                        <div className="text-right">
+                                                                            <p className="font-medium text-slate-700 text-xs">{new Date(a.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
+                                                                            <p className="text-[10px] text-slate-500">{new Date(a.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="grid grid-cols-2 gap-2">
+                                                                        <div>
+                                                                            <span className="text-[9px] uppercase text-slate-400 font-bold block">Cidade</span>
+                                                                            <span className="text-slate-600 text-xs break-words leading-tight block">{a.calendar_name || '-'}</span>
+                                                                        </div>
+                                                                        <div>
+                                                                            <span className="text-[9px] uppercase text-slate-400 font-bold block">Revestimento</span>
+                                                                            <span className="text-slate-600 text-xs break-words leading-tight block">{inventory.find(i => i.id === a.material_used_id)?.name || '-'}</span>
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex justify-between items-center text-xs mt-1 gap-3">
+                                                                        <div className="flex-1 space-y-1 bg-slate-50 border border-slate-200 shadow-sm rounded-lg p-2">
+                                                                            <div className="flex justify-between font-medium text-slate-600">
+                                                                                <span className="capitalize">{a.payment_method}</span>
+                                                                                <span className="text-emerald-600 font-bold">R$ {Number(a.gross_amount).toFixed(2)}</span>
+                                                                            </div>
+                                                                            {a.is_split_payment && (
+                                                                                <div className="flex justify-between font-medium text-slate-600 border-t border-slate-200 pt-1 mt-1">
+                                                                                    <span className="capitalize">{a.payment_method_2}</span>
+                                                                                    <span className="text-emerald-600 font-bold">R$ {Number(a.gross_amount_2).toFixed(2)}</span>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                        <div className="flex shrink-0 gap-1 items-center">
+                                                                            <button onClick={() => setSelectedTransaction(a)} className="p-2 text-slate-500 bg-white hover:bg-slate-100 rounded-lg border border-slate-200 shadow-sm"><Eye size={14}/></button>
+                                                                            <button onClick={() => openEditModal('appointment', a)} className="p-2 text-blue-500 bg-white hover:bg-blue-50 rounded-lg border border-slate-200 shadow-sm"><Pencil size={14}/></button>
+                                                                            <button onClick={() => handleDelete('appointments', a.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                    <div className="flex justify-between items-center mt-4">
+                                                        <select value={atmItemsPerPage} onChange={(e) => { setAtmItemsPerPage(Number(e.target.value)); setAtmCurrentPageFuturos(1); setAtmCurrentPageRealizados(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
+                                                            <option value={10}>10 por página</option>
+                                                            <option value={50}>50 por página</option>
+                                                            <option value={100}>100 por página</option>
+                                                        </select>
+                                                        <div className="flex gap-2">
+                                                            <button onClick={() => setAtmCurrentPageRealizados(p => Math.max(1, p - 1))} disabled={atmCurrentPageRealizados === 1} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Anterior</button>
+                                                            <span className="px-3 py-1 text-sm text-slate-600 font-medium">Página {atmCurrentPageRealizados} de {Math.ceil(filteredAppointments.length / atmItemsPerPage) || 1}</span>
+                                                            <button onClick={() => setAtmCurrentPageRealizados(p => p + 1)} disabled={atmCurrentPageRealizados >= Math.ceil(filteredAppointments.length / atmItemsPerPage)} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Próxima</button>
+                                                        </div>
                                                     </div>
                                                 </div>
                                             )}
@@ -841,7 +1191,7 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                         <div className="overflow-x-auto w-full">
-                                            <table className="w-full text-sm text-left whitespace-nowrap">
+                                            <table className="w-full text-sm text-left whitespace-nowrap hidden md:table">
                                                 <thead className="bg-slate-50 text-slate-500 font-medium border-b border-gray-100">
                                                     <tr>
                                                         <th className="p-4">Data</th>
@@ -855,70 +1205,7 @@ export default function AdminPage() {
                                                     </tr>
                                                 </thead>
                                                 <tbody className="divide-y divide-gray-100">
-                                                    {[
-                                                        ...appointments.flatMap(a => {
-                                                            const primaryAccount = accounts.find(acc => acc.id === a.account_id);
-                                                            const primary = {
-                                                                ...a,
-                                                                type: 'in',
-                                                                date: a.completed_at,
-                                                                val: a.gross_amount,
-                                                                net_val: a.net_amount,
-                                                                city: a.calendar_name,
-                                                                label: `${a.vehicle_model} - ${a.customer_name}`,
-                                                                account_name: primaryAccount?.name || 'Conta Removida',
-                                                                account_region: primaryAccount?.region_id,
-                                                                is_primary: true
-                                                            };
-                                                            if (a.is_split_payment) {
-                                                                const secondaryAccount = accounts.find(acc => acc.id === a.account_id_2);
-                                                                const secondary = {
-                                                                    ...a,
-                                                                    type: 'in',
-                                                                    date: a.completed_at,
-                                                                    val: a.gross_amount_2,
-                                                                    net_val: a.net_amount_2,
-                                                                    payment_method: a.payment_method_2,
-                                                                    city: a.calendar_name,
-                                                                    label: `${a.vehicle_model} - ${a.customer_name} (Pagto 2)`,
-                                                                    account_name: secondaryAccount?.name || 'Conta Removida',
-                                                                    account_region: secondaryAccount?.region_id,
-                                                                    is_primary: false
-                                                                };
-                                                                return [primary, secondary];
-                                                            }
-                                                            return [primary];
-                                                        }),
-                                                        ...expenses.map(e => {
-                                                            const expAccount = accounts.find(acc => acc.id === e.account_id);
-                                                            return {
-                                                                ...e,
-                                                                type: 'out',
-                                                                date: e.date,
-                                                                val: e.amount,
-                                                                net_val: e.amount,
-                                                                city: '',
-                                                                label: e.description,
-                                                                account_name: expAccount?.name || 'Conta Excluída',
-                                                                account_region: expAccount?.region_id
-                                                            };
-                                                        })
-                                                    ].sort((a, b) => new Date(b.date) - new Date(a.date)).filter(t => {
-                                                        let matches = true;
-                                                        if (finFilterType !== 'all' && t.type !== finFilterType) matches = false;
-                                                        if (finFilterCategory !== 'all') {
-                                                            if (t.type === 'in') matches = false; // Receitas não tem categoria (por enquanto)
-                                                            else if (t.expense_categories?.name !== finFilterCategory) matches = false;
-                                                        }
-                                                        if (finFilterAccount !== 'all' && t.account_id !== finFilterAccount && t.account_id_2 !== finFilterAccount) matches = false;
-                                                        if (selectedRegion === 'all' && finFilterRegion !== 'all' && (t.account_region || t.region_id) !== finFilterRegion) matches = false;
-                                                        if (finSearchTerm) {
-                                                            const term = finSearchTerm.toLowerCase();
-                                                            const searchString = `${t.label} ${t.account_name} ${t.val}`.toLowerCase();
-                                                            if (!searchString.includes(term)) matches = false;
-                                                        }
-                                                        return matches;
-                                                    }).map((t, i) => (
+                                                    {paginatedTransactions.map((t, i) => (
                                                         <tr key={`${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</td>
                                                             <td className="p-4 font-bold text-slate-700 capitalize flex flex-col whitespace-normal break-words max-w-[200px]" title={t.label}>
@@ -950,8 +1237,70 @@ export default function AdminPage() {
                                                             </td>
                                                         </tr>
                                                     ))}
+                                                    {paginatedTransactions.length === 0 && (
+                                                        <tr>
+                                                            <td colSpan="8" className="p-8 text-center text-slate-500">Nenhuma movimentação encontrada para este filtro.</td>
+                                                        </tr>
+                                                    )}
                                                 </tbody>
                                             </table>
+
+                                            {/* Mobile Cards para Financeiro */}
+                                            <div className="md:hidden flex flex-col gap-4 mt-2 mb-2">
+                                                {paginatedTransactions.length === 0 ? (
+                                                    <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhuma movimentação encontrada para este filtro.</div>
+                                                ) : paginatedTransactions.map((t, i) => (
+                                                    <div key={`mob-fin-${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                        <div className="flex justify-between items-start border-b border-slate-100 pb-2">
+                                                            <div className="pr-2">
+                                                                <p className="font-bold text-slate-800 capitalize leading-tight">{t.label.length > 40 ? t.label.substring(0, 40) + '...' : t.label}</p>
+                                                                <p className="text-[11px] text-slate-500 mt-1">{new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} • {t.city || '-'}</p>
+                                                            </div>
+                                                            <div className={`shrink-0 text-right font-bold text-lg ${t.type === 'in' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                                {t.type === 'in' ? '+' : '-'} R$ {Number(t.val).toFixed(2)}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex justify-between items-center text-xs mt-1 gap-3">
+                                                            <div className="flex-1 space-y-1 bg-slate-50 border border-slate-200 shadow-sm rounded-lg p-2">
+                                                                <div className="grid grid-cols-2 gap-2">
+                                                                    <div>
+                                                                        <span className="text-[9px] uppercase text-slate-400 font-bold block">Conta</span>
+                                                                        <span className="text-[10px] font-bold uppercase px-2 py-0.5 rounded bg-white text-slate-600 border border-slate-200 inline-block truncate max-w-full">{t.account_name}</span>
+                                                                    </div>
+                                                                    <div>
+                                                                        <span className="text-[9px] uppercase text-slate-400 font-bold block">Método / Categ</span>
+                                                                        <span className="text-slate-600 capitalize break-words leading-tight block">{t.type === 'in' ? (t.payment_method || '-') : (t.expense_categories?.name || '-')}</span>
+                                                                    </div>
+                                                                </div>
+                                                                {t.type === 'in' && (
+                                                                    <div className="flex justify-between font-medium text-slate-600 border-t border-slate-200 pt-1 mt-1">
+                                                                        <span className="capitalize text-[11px]">Valor Líquido</span>
+                                                                        <span className="text-blue-600 font-bold">R$ {Number(t.net_val ?? t.val).toFixed(2)}</span>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                            <div className="flex shrink-0 gap-1 items-center">
+                                                                <button onClick={() => openEditModal(t.type === 'in' ? 'appointment' : 'expense', t)} className="p-2 text-blue-500 bg-white hover:bg-blue-50 rounded-lg border border-slate-200 shadow-sm"><Pencil size={14}/></button>
+                                                                {t.is_primary !== false && (
+                                                                    <button onClick={() => handleDelete(t.type === 'in' ? 'appointments' : 'expenses', t.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-white">
+                                            <select value={finItemsPerPage} onChange={(e) => { setFinItemsPerPage(Number(e.target.value)); setFinCurrentPage(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
+                                                <option value={10}>10 por página</option>
+                                                <option value={50}>50 por página</option>
+                                                <option value={100}>100 por página</option>
+                                            </select>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setFinCurrentPage(p => Math.max(1, p - 1))} disabled={finCurrentPage === 1} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Anterior</button>
+                                                <span className="px-3 py-1 text-sm text-slate-600 font-medium">Página {finCurrentPage} de {Math.ceil(filteredTransactions.length / finItemsPerPage) || 1}</span>
+                                                <button onClick={() => setFinCurrentPage(p => p + 1)} disabled={finCurrentPage >= Math.ceil(filteredTransactions.length / finItemsPerPage)} className="px-3 py-1 bg-slate-100 text-slate-600 rounded disabled:opacity-50">Próxima</button>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -959,8 +1308,31 @@ export default function AdminPage() {
 
                             {activeTab === 'equipe' && (
                                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
-                                    <h3 className="font-bold text-slate-800 mb-6 flex items-center gap-2"><Users size={20} className="text-blue-600" /> Gestão de Equipe</h3>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<div key={i} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></div>))}</div>
+                                    <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
+                                        <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" /> Gestão de Equipe</h3>
+                                        
+                                        <div className="flex items-center gap-4">
+                                            <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                                                <button onClick={() => setEquipeViewType('mensal')} className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${equipeViewType === 'mensal' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Mensal</button>
+                                                <button onClick={() => setEquipeViewType('semanal')} className={`px-4 py-2 rounded-md text-sm font-bold transition-colors ${equipeViewType === 'semanal' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>Semanal</button>
+                                            </div>
+                                            
+                                            {equipeViewType === 'semanal' && (
+                                                <div className="flex items-center gap-3">
+                                                    <button onClick={() => { const d = new Date(equipeCurrentWeekDate); d.setDate(d.getDate() - 7); setEquipeCurrentWeekDate(d); }} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"><ChevronLeft size={18} /></button>
+                                                    <span className="text-sm font-bold text-slate-700 whitespace-nowrap">Semana {(() => {
+                                                        const current = new Date(equipeCurrentWeekDate);
+                                                        const day = current.getDay();
+                                                        const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+                                                        const startW = new Date(current.setDate(diff));
+                                                        return startW.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+                                                    })()}</span>
+                                                    <button onClick={() => { const d = new Date(equipeCurrentWeekDate); d.setDate(d.getDate() + 7); setEquipeCurrentWeekDate(d); }} className="p-2 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"><ChevronRight size={18} /></button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<div key={i} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></div>))}</div>
                                 </div>
                             )}
 
@@ -983,7 +1355,7 @@ export default function AdminPage() {
                                             if (invSortOrder === 'qty_desc') return b.quantity - a.quantity;
                                             if (invSortOrder === 'qty_asc') return a.quantity - b.quantity;
                                             return a.name.localeCompare(b.name);
-                                        }).map(item => (<div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{item.quantity <= item.min_threshold && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div><h4 className="font-bold text-slate-800 text-lg group-hover:text-blue-700 transition-colors">{item.name}</h4><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${item.quantity <= item.min_threshold ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{item.quantity <= item.min_threshold ? 'Repor Estoque' : 'Disponível'}</span></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-center gap-2"><input className="w-16 p-2 border border-blue-200 bg-blue-50 rounded-lg text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-2 rounded-lg hover:bg-emerald-200"><Save size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></div>))}
+                                        }).map(item => { const isReporEstoque = item.quantity <= item.min_threshold && item.min_threshold >= 0; const isNaoDisponivel = item.quantity <= 0 && item.min_threshold < 0; return (<div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{isReporEstoque && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div><h4 className="font-bold text-slate-800 text-lg group-hover:text-blue-700 transition-colors">{item.name}</h4><div className="mt-1 flex flex-wrap gap-2"><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${(isReporEstoque || isNaoDisponivel) ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isReporEstoque ? 'Repor Estoque' : isNaoDisponivel ? 'Não Disponível' : 'Disponível'}</span>{selectedRegion === 'all' && <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{regions.find(r => r.slug === item.region_id)?.name || item.region_id || 'Matriz'}</span>}</div></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-end gap-2"><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Atual</label><input className="w-14 p-1.5 border border-blue-200 bg-blue-50 rounded text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /></div><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Mín</label><input className="w-14 p-1.5 border border-slate-200 bg-slate-50 rounded text-center font-bold text-slate-700 outline-none" type="number" value={editInvForm.min_threshold} onChange={e => setEditInvForm({ ...editInvForm, min_threshold: e.target.value })} /></div><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></div>); })}
                                     </div>
                                 </div>
                             )}
@@ -1112,7 +1484,7 @@ export default function AdminPage() {
                     <div className="space-y-3">
                         <h4 className="font-bold text-slate-600 text-[10px] tracking-wider uppercase border-b border-gray-100 pb-1 mb-2">Serviço</h4>
                         {editingItem.status === 'concluido' && (
-                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Data Conclusão</label><input type="datetime-local" className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.completed_at ? editingItem.completed_at.slice(0, 16) : ''} onChange={e => setEditingItem({ ...editingItem, completed_at: e.target.value + ':00Z' })} /></div>
+                            <div><label className="text-[10px] font-bold uppercase text-slate-500">Data Conclusão</label><input type="datetime-local" className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.completed_at && !isNaN(new Date(editingItem.completed_at).getTime()) ? new Date(new Date(editingItem.completed_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''} onChange={e => setEditingItem({ ...editingItem, completed_at: e.target.value ? new Date(e.target.value).toISOString() : null })} /></div>
                         )}
                         <div><label className="text-[10px] font-bold uppercase text-slate-500">Veículo</label><input className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.vehicle_model || ''} onChange={e => setEditingItem({ ...editingItem, vehicle_model: e.target.value })} /></div>
                         <div><label className="text-[10px] font-bold uppercase text-slate-500">Cliente</label><input className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.customer_name || ''} onChange={e => setEditingItem({ ...editingItem, customer_name: e.target.value })} /></div>
@@ -1176,7 +1548,101 @@ export default function AdminPage() {
             )}{modalType === 'expense' && (<><div><label className="text-xs font-bold text-slate-500">Descrição</label><input className="w-full p-3 border rounded-xl" value={editingItem.description} onChange={e => setEditingItem({ ...editingItem, description: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Data</label><input type="date" className="w-full p-3 border rounded-xl" value={editingItem.date ? editingItem.date.slice(0, 10) : ''} onChange={e => setEditingItem({ ...editingItem, date: e.target.value + 'T12:00:00Z' })} /></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.amount} onChange={e => setEditingItem({ ...editingItem, amount: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Conta Origem</label><select className="w-full p-3 border rounded-xl" value={editingItem.account_id} onChange={e => setEditingItem({ ...editingItem, account_id: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div></>)}{modalType === 'installer' && (<><div><label className="text-xs font-bold text-slate-500">Nome Completo</label><input className="w-full p-3 border rounded-xl" value={editingItem.full_name || ''} onChange={e => setEditingItem({ ...editingItem, full_name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Padrão (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.commission_rate} onChange={e => setEditingItem({ ...editingItem, commission_rate: e.target.value })} /></div></>)}{modalType === 'account' && (<><div><label className="text-xs font-bold text-slate-500">Nome da Conta</label><input className="w-full p-3 border rounded-xl" value={editingItem.name || ''} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Tipo de Conta</label><select className="w-full p-3 border rounded-xl" value={editingItem.type || 'banco'} onChange={e => setEditingItem({ ...editingItem, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500">Região</label><select className="w-full p-3 border rounded-xl" value={editingItem.region_id || 'matriz'} onChange={e => setEditingItem({ ...editingItem, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" value={editingItem.initial_balance || 0} onChange={e => setEditingItem({ ...editingItem, initial_balance: e.target.value })} /></div></>)}</div><div className="flex gap-3 mt-6"><button onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button><button onClick={(e) => { e.currentTarget.disabled = true; e.currentTarget.innerText = 'Salvando...'; handleSaveEdit(); }} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 disabled:opacity-50">Salvar Alterações</button></div></div></div>)
             }
             {showTransferModal && (<div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95"><h3 className="text-lg font-bold mb-4 text-slate-900 flex items-center gap-2"><ArrowRightLeft size={20} /> Transferência</h3><form onSubmit={handleTransfer} className="space-y-4"><div><label className="text-xs font-bold text-slate-500">De (Origem)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, from: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name} (R$ {Number(a.balance).toFixed(2)})</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Para (Destino)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, to: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, amount: e.target.value })} /></div><button className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-500 mt-2">Confirmar</button><button type="button" onClick={() => setShowTransferModal(false)} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Cancelar</button></form></div></div>)}
-            {selectedTransaction && (<div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200"><div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200"><div className="p-5 bg-slate-900 text-white flex justify-between items-center"><h3 className="font-bold text-lg flex items-center gap-2"><Eye size={18} className="text-blue-400" /> Detalhes</h3><button onClick={() => setSelectedTransaction(null)} className="p-2 hover:bg-slate-700 rounded-full transition-colors"><X size={20} /></button></div><div className="overflow-y-auto p-6 space-y-6">{selectedTransaction.photo_url ? (<div className="rounded-2xl overflow-hidden border-4 border-slate-100 bg-slate-50 shadow-inner"><img src={selectedTransaction.photo_url} alt="Comprovante" className="w-full h-auto object-cover" /></div>) : <div className="h-32 bg-slate-50 rounded-2xl flex flex-col items-center justify-center text-slate-400 border-2 border-dashed border-slate-200"><Eye size={32} className="mb-2 opacity-50" /><span className="text-xs font-medium">Sem foto</span></div>}<div className="space-y-4"><div className="flex justify-between items-start border-b border-slate-100 pb-4"><div><p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Veículo / Cliente</p><p className="font-bold text-xl text-slate-900">{selectedTransaction.vehicle_model}</p><p className="text-sm text-slate-500">{selectedTransaction.customer_name}</p></div><div className="text-right"><p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-1">Valor Bruto</p><p className="font-bold text-xl text-emerald-600">R$ {Number(selectedTransaction.gross_amount || selectedTransaction.amount).toFixed(2)}</p></div></div><div className="grid grid-cols-2 gap-4"><div className="bg-slate-50 p-3 rounded-xl"><p className="text-[10px] font-bold text-slate-400 uppercase">Método</p><p className="font-medium text-slate-700 capitalize">{selectedTransaction.payment_method}</p></div><div className="bg-slate-50 p-3 rounded-xl"><p className="text-[10px] font-bold text-slate-400 uppercase">Parcelas</p><p className="font-medium text-slate-700">{selectedTransaction.installments}x</p></div>{selectedTransaction.net_amount && <div className="bg-blue-50 p-3 rounded-xl col-span-2 border border-blue-100"><p className="text-[10px] font-bold text-blue-400 uppercase">Líquido (Empresa)</p><p className="font-bold text-blue-700 text-lg">R$ {Number(selectedTransaction.net_amount).toFixed(2)}</p></div>}{selectedTransaction.commission_amount > 0 && <div className="bg-emerald-50 p-3 rounded-xl col-span-2 border border-emerald-100"><p className="text-[10px] font-bold text-emerald-500 uppercase">Comissão (Instalador)</p><p className="font-bold text-emerald-700 text-lg">R$ {Number(selectedTransaction.commission_amount).toFixed(2)}</p></div>}</div></div></div></div></div>)}
+            {selectedTransaction && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh] animate-in zoom-in-95 duration-200">
+                        <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
+                            <h3 className="font-bold text-lg flex items-center gap-2"><Eye size={18} className="text-blue-400" /> Detalhes do Atendimento</h3>
+                            <button onClick={() => setSelectedTransaction(null)} className="p-2 hover:bg-slate-700 rounded-full transition-colors"><X size={20} /></button>
+                        </div>
+                        <div className="overflow-y-auto p-5">
+                            <div className="flex flex-col md:flex-row gap-5">
+                                <div className="w-full md:w-1/2 flex flex-col gap-3">
+                                    {selectedTransaction.photo_url ? (
+                                        <>
+                                            <div className="rounded-xl overflow-hidden border border-slate-200 bg-slate-50 shadow-sm h-full flex items-center justify-center">
+                                                <img src={selectedTransaction.photo_url} alt="Comprovante" className="w-full h-auto object-cover max-h-80" />
+                                            </div>
+                                            <div className="flex gap-2">
+                                                <button onClick={() => window.open(selectedTransaction.photo_url, '_blank')} className="flex-1 bg-slate-100 text-slate-700 py-2 rounded-lg font-bold text-xs hover:bg-slate-200 flex items-center justify-center gap-1">
+                                                    <Maximize size={14} /> Ampliar
+                                                </button>
+                                                <button onClick={async () => {
+                                                    try {
+                                                        const response = await fetch(selectedTransaction.photo_url);
+                                                        const blob = await response.blob();
+                                                        const url = window.URL.createObjectURL(blob);
+                                                        const a = document.createElement('a');
+                                                        a.href = url;
+                                                        a.download = `foto-volante-${selectedTransaction.id}.jpg`;
+                                                        document.body.appendChild(a);
+                                                        a.click();
+                                                        a.remove();
+                                                        window.URL.revokeObjectURL(url);
+                                                    } catch(e) {
+                                                        window.open(selectedTransaction.photo_url, '_blank');
+                                                    }
+                                                }} className="flex-1 bg-blue-50 text-blue-700 py-2 rounded-lg font-bold text-xs hover:bg-blue-100 flex items-center justify-center gap-1">
+                                                    <Download size={14} /> Baixar
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="h-full min-h-[160px] bg-slate-50 rounded-xl flex flex-col items-center justify-center text-slate-400 border border-dashed border-slate-300">
+                                            <Eye size={28} className="mb-2 opacity-50" />
+                                            <span className="text-xs font-medium">Sem foto</span>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="w-full md:w-1/2 space-y-4">
+                                    <div className="flex justify-between items-start border-b border-slate-100 pb-3">
+                                        <div>
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Veículo / Cliente</p>
+                                            <p className="font-bold text-lg text-slate-900 leading-tight">{selectedTransaction.vehicle_model}</p>
+                                            <p className="text-xs text-slate-500 font-medium">{selectedTransaction.customer_name}</p>
+                                        </div>
+                                        <div className="text-right">
+                                            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-0.5">Valor Bruto</p>
+                                            <p className="font-bold text-lg text-emerald-600">R$ {Number((selectedTransaction.gross_amount || selectedTransaction.amount || 0) + (selectedTransaction.is_split_payment ? (selectedTransaction.gross_amount_2 || 0) : 0)).toFixed(2)}</p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase">Cidade</p>
+                                            <p className="font-semibold text-slate-700 text-sm truncate">{selectedTransaction.calendar_name || '-'}</p>
+                                        </div>
+                                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100">
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase">Revestimento</p>
+                                            <p className="font-semibold text-slate-700 text-sm truncate">{inventory.find(i => i.id === selectedTransaction.material_used_id)?.name || '-'}</p>
+                                        </div>
+                                        <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 col-span-2">
+                                            <p className="text-[9px] font-bold text-slate-400 uppercase">Pagamento</p>
+                                            <p className="font-semibold text-slate-700 text-sm capitalize">
+                                                {selectedTransaction.is_split_payment 
+                                                    ? `${selectedTransaction.payment_method} (R$ ${Number(selectedTransaction.gross_amount).toFixed(2)} em ${selectedTransaction.installments || 1}x) + ${selectedTransaction.payment_method_2} (R$ ${Number(selectedTransaction.gross_amount_2).toFixed(2)} em ${selectedTransaction.installments_2 || 1}x)` 
+                                                    : `${selectedTransaction.payment_method} (${selectedTransaction.installments || 1}x)`}
+                                            </p>
+                                        </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-2 gap-3 pt-2">
+                                        {selectedTransaction.net_amount && (
+                                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex flex-col justify-center col-span-2">
+                                                <p className="text-[9px] font-bold text-blue-500 uppercase">Líquido (Empresa)</p>
+                                                <p className="font-bold text-blue-700 text-base">R$ {Number(selectedTransaction.net_amount).toFixed(2)}</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="p-3 bg-slate-50 border-t border-slate-100 text-center">
+                            <p className="text-[10px] text-slate-400 font-medium">Pressione <kbd className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">ESC</kbd> para fechar ou <kbd className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">Setas</kbd> para navegar</p>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div >
     );
 }
