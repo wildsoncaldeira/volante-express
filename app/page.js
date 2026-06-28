@@ -283,15 +283,22 @@ function HomeContent() {
                     <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1.5"><Trophy size={12} className="text-yellow-500" /> META DO MÊS</h4>
                     <p className="text-lg font-bold text-white mt-1">{completedInRegion} de {monthlyGoal} Volantes</p>
                   </div>
-                  <span className="text-lg font-extrabold text-blue-500 bg-blue-950/40 px-3 py-1 rounded-xl border border-blue-900/30">
+                  <motion.span 
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ duration: 0.8, delay: 0.5, type: 'spring', bounce: 0.5 }}
+                    className="text-lg font-extrabold text-blue-500 bg-blue-950/40 px-3 py-1 rounded-xl border border-blue-900/30"
+                  >
                     {Math.round(goalPercentage)}%
-                  </span>
+                  </motion.span>
                 </div>
                 <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
-                  <div 
-                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full transition-all duration-500" 
-                    style={{ width: `${Math.min(goalPercentage, 100)}%` }}
-                  ></div>
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(goalPercentage, 100)}%` }}
+                    transition={{ duration: 1.5, ease: "easeOut", delay: 0.3 }}
+                    className="bg-gradient-to-r from-blue-500 to-indigo-600 h-full rounded-full" 
+                  ></motion.div>
                 </div>
                 <p className="text-xs text-slate-400 italic mt-3 flex items-center gap-1.5">
                   ✨ {motivationalMessage}
