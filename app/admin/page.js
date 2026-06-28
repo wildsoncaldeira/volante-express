@@ -730,38 +730,38 @@ export default function AdminPage() {
                         <div className="max-w-7xl mx-auto animate-in fade-in space-y-6">
                             <AnimatePresence mode="wait">
                             {activeTab === 'dashboard' && (
-                                <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
-                                    <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={20} className="text-blue-600" /> Balanço Financeiro</h3>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                                        <div className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Faturamento Bruto</p><h3 className="text-xl sm:text-2xl font-bold text-slate-900 truncate" title={`R$ ${dashboardStats.totalGross.toFixed(2)}`}>R$ {dashboardStats.totalGross.toFixed(2)}</h3></div>
-                                        <div className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Ticket Médio</p><h3 className="text-xl sm:text-2xl font-bold text-blue-600 truncate" title={`R$ ${dashboardStats.ticketMedio.toFixed(2)}`}>R$ {dashboardStats.ticketMedio.toFixed(2)}</h3></div>
-                                        <div className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Despesas</p><h3 className="text-xl sm:text-2xl font-bold text-red-600 truncate" title={`R$ ${dashboardStats.totalExpense.toFixed(2)}`}>R$ {dashboardStats.totalExpense.toFixed(2)}</h3></div>
-                                        <div className="bg-slate-900 p-5 rounded-2xl shadow-lg text-white flex flex-col justify-between h-full"><p className="text-slate-400 text-[10px] sm:text-xs font-bold uppercase mb-2">Lucro Líquido</p><h3 className="text-xl sm:text-2xl font-bold truncate" title={`R$ ${dashboardStats.profit.toFixed(2)}`}>R$ {dashboardStats.profit.toFixed(2)}</h3></div>
-                                    </div>
+                                <motion.div key="dashboard" initial="hidden" animate="show" exit="exit" variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.2, staggerChildren: 0.1 } }, exit: { opacity: 0, y: -10, transition: { duration: 0.2 } } }}>
+                                    <motion.h3 variants={{ hidden: { opacity: 0, x: -20 }, show: { opacity: 1, x: 0 } }} className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={20} className="text-blue-600" /> Balanço Financeiro</motion.h3>
+                                    <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0, transition: { staggerChildren: 0.05 } } }} className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Faturamento Bruto</p><h3 className="text-xl sm:text-2xl font-bold text-slate-900 truncate" title={`R$ ${dashboardStats.totalGross.toFixed(2)}`}>R$ {dashboardStats.totalGross.toFixed(2)}</h3></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Ticket Médio</p><h3 className="text-xl sm:text-2xl font-bold text-blue-600 truncate" title={`R$ ${dashboardStats.ticketMedio.toFixed(2)}`}>R$ {dashboardStats.ticketMedio.toFixed(2)}</h3></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Despesas</p><h3 className="text-xl sm:text-2xl font-bold text-red-600 truncate" title={`R$ ${dashboardStats.totalExpense.toFixed(2)}`}>R$ {dashboardStats.totalExpense.toFixed(2)}</h3></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-slate-900 p-5 rounded-2xl shadow-lg text-white flex flex-col justify-between h-full"><p className="text-slate-400 text-[10px] sm:text-xs font-bold uppercase mb-2">Lucro Líquido</p><h3 className="text-xl sm:text-2xl font-bold truncate" title={`R$ ${dashboardStats.profit.toFixed(2)}`}>R$ {dashboardStats.profit.toFixed(2)}</h3></motion.div>
+                                    </motion.div>
 
-                                    <h3 className="font-bold text-slate-800 mt-8 mb-4 flex items-center gap-2"><ListTodo size={20} className="text-blue-600" /> Resumo de Atendimentos</h3>
-                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                                        <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos no Mês</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.feitosMes}</p></div>
-                                        <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos Ontem</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.feitosOntem}</p></div>
-                                        <div className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex flex-col justify-center items-center text-center"><p className="text-blue-600 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos Hoje</p><p className="text-2xl font-bold text-blue-700">{dashboardStats.feitosHoje}</p></div>
-                                        <div className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Agendados (Futuros)</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.agendadosFuturo}</p></div>
-                                    </div>
+                                    <motion.h3 variants={{ hidden: { opacity: 0, x: -20 }, show: { opacity: 1, x: 0 } }} className="font-bold text-slate-800 mt-8 mb-4 flex items-center gap-2"><ListTodo size={20} className="text-blue-600" /> Resumo de Atendimentos</motion.h3>
+                                    <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0, transition: { staggerChildren: 0.05 } } }} className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos no Mês</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.feitosMes}</p></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos Ontem</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.feitosOntem}</p></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-blue-50 p-4 rounded-xl border border-blue-100 flex flex-col justify-center items-center text-center"><p className="text-blue-600 text-[10px] font-bold uppercase tracking-wider mb-1">Feitos Hoje</p><p className="text-2xl font-bold text-blue-700">{dashboardStats.feitosHoje}</p></motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring", stiffness: 300 } } }} className="bg-white p-4 rounded-xl border border-gray-100 flex flex-col justify-center items-center text-center"><p className="text-slate-500 text-[10px] font-bold uppercase tracking-wider mb-1">Agendados (Futuros)</p><p className="text-2xl font-bold text-slate-800">{dashboardStats.agendadosFuturo}</p></motion.div>
+                                    </motion.div>
 
-                                    <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-8">
+                                    <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 mt-8">
                                         <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><Banknote size={20} className="text-blue-600" /> Saldos em Conta</h3>
-                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+                                        <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
                                             {displayAccounts.map(acc => (
-                                                <div key={acc.id} className={`p-4 rounded-xl border ${acc.is_default ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-gray-50 border-gray-200'}`}>
+                                                <motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring" } } }} key={acc.id} className={`p-4 rounded-xl border ${acc.is_default ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-gray-50 border-gray-200'}`}>
                                                     <p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{acc.type === 'banco' ? 'Global' : `Cx. ${acc.region_id}`}</p>
                                                     <p className="font-bold text-lg text-slate-900 truncate">{acc.name}</p>
                                                     <p className={`text-xl font-bold mt-1 ${Number(acc.balance) < 0 ? 'text-red-600' : 'text-slate-700'}`}>R$ {Number(acc.balance).toFixed(2)}</p>
-                                                </div>
+                                                </motion.div>
                                             ))}
-                                        </div>
-                                    </div>
+                                        </motion.div>
+                                    </motion.div>
 
-                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2 h-80">
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 lg:col-span-2 h-80">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><TrendingUp size={16} /> Fluxo de Caixa (Dia a Dia)</h4>
                                             <ResponsiveContainer width="100%" height="85%">
                                                 <AreaChart data={dashboardStats.cashFlowData}>
@@ -776,8 +776,8 @@ export default function AdminPage() {
                                                     <Area type="monotone" dataKey="saida" stroke="#ef4444" fillOpacity={1} fill="url(#colorSaida)" strokeWidth={2} name="Saídas" />
                                                 </AreaChart>
                                             </ResponsiveContainer>
-                                        </div>
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
+                                        </motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><TrendingDown size={16} /> Despesas por Categoria</h4>
                                             <ResponsiveContainer width="100%" height="85%">
                                                 <PieChart>
@@ -788,11 +788,11 @@ export default function AdminPage() {
                                                     <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" />
                                                 </PieChart>
                                             </ResponsiveContainer>
-                                        </div>
-                                    </div>
+                                        </motion.div>
+                                    </motion.div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-80">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><PieIcon size={16} /> Receita por Método</h4>
                                             <ResponsiveContainer width="100%" height="85%">
                                                 <PieChart>
@@ -803,9 +803,9 @@ export default function AdminPage() {
                                                     <Legend verticalAlign="middle" align="right" layout="vertical" iconType="circle" />
                                                 </PieChart>
                                             </ResponsiveContainer>
-                                        </div>
+                                        </motion.div>
 
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[600px] md:col-span-2">
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[600px] md:col-span-2">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><Package size={16} /> Comparativo de Revestimentos (Detalhado)</h4>
                                             <ResponsiveContainer width="100%" height="90%">
                                                 <BarChart data={dashboardStats.pieDataCoatings} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
@@ -817,11 +817,11 @@ export default function AdminPage() {
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        </div>
-                                    </div>
+                                        </motion.div>
+                                    </motion.div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 items-start">
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6 items-start">
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><PieIcon size={16} /> Atendimentos por Cidade</h4>
                                             <ResponsiveContainer width="100%" height="90%">
                                                 <BarChart data={dashboardStats.pieDataCities} layout="vertical" margin={{ top: 0, right: 30, left: 0, bottom: 0 }}>
@@ -833,8 +833,8 @@ export default function AdminPage() {
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        </div>
-                                        <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
+                                        </motion.div>
+                                        <motion.div variants={{ hidden: { opacity: 0, y: 15 }, show: { opacity: 1, y: 0 } }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100 h-[400px]">
                                             <h4 className="font-bold text-slate-700 mb-6 flex items-center gap-2 text-xs uppercase tracking-wide"><BarChart3 size={16} /> Atendimentos por Dia da Semana</h4>
                                             <ResponsiveContainer width="100%" height="90%">
                                                 <BarChart data={dashboardStats.barDataWeekDays} margin={{ top: 0, right: 0, left: -20, bottom: 0 }}>
@@ -847,8 +847,8 @@ export default function AdminPage() {
                                                     </Bar>
                                                 </BarChart>
                                             </ResponsiveContainer>
-                                        </div>
-                                    </div>
+                                        </motion.div>
+                                    </motion.div>
                                 </motion.div>
                             )}
 
@@ -920,11 +920,11 @@ export default function AdminPage() {
                                                                     <th className="p-4 text-center">Ações</th>
                                                                 </tr>
                                                             </thead>
-                                                            <tbody className="divide-y divide-gray-100">
+                                                            <motion.tbody initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="divide-y divide-gray-100">
                                                                 {filteredFutureAppointments.length === 0 ? (
                                                                     <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum agendamento encontrado para este filtro.</td></tr>
                                                                 ) : paginatedFutureAppointments.map(a => (
-                                                                    <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                                                                    <motion.tr variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
                                                                             {new Date(a.appointment_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} <br />
                                                                             <span className="text-xs text-slate-500">{new Date(a.appointment_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -949,17 +949,17 @@ export default function AdminPage() {
                                                                                 <button onClick={() => handleDelete('appointments', a.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                                                                             </div>
                                                                         </td>
-                                                                    </tr>
+                                                                    </motion.tr>
                                                                 ))}
-                                                            </tbody>
+                                                            </motion.tbody>
                                                         </table>
 
                                                         {/* Mobile Cards para Atendimentos Futuros */}
-                                                        <div className="md:hidden flex flex-col gap-4 mt-2">
+                                                        <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="md:hidden flex flex-col gap-4 mt-2">
                                                             {filteredFutureAppointments.length === 0 ? (
                                                                 <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhum atendimento agendado encontrado.</div>
                                                             ) : paginatedFutureAppointments.map(a => (
-                                                                <div key={`mob-fut-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                                <motion.div variants={{ hidden: { opacity: 0, scale: 0.95 }, show: { opacity: 1, scale: 1 } }} key={`mob-fut-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
                                                                     <div className="flex justify-between items-start border-b border-slate-100 pb-2">
                                                                         <div>
                                                                             <p className="font-bold text-slate-800 leading-tight">{a.customer_name}</p>
@@ -986,9 +986,9 @@ export default function AdminPage() {
                                                                             <button onClick={() => handleDelete('appointments', a.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
                                                                         </div>
                                                                     </div>
-                                                                </div>
+                                                                </motion.div>
                                                             ))}
-                                                        </div>
+                                                        </motion.div>
                                                     </div>
                                                     <div className="flex justify-between items-center mt-4">
                                                         <select value={atmItemsPerPage} onChange={(e) => { setAtmItemsPerPage(Number(e.target.value)); setAtmCurrentPageFuturos(1); setAtmCurrentPageRealizados(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
@@ -1021,11 +1021,11 @@ export default function AdminPage() {
                                                                     <th className="p-4 text-center">Ações</th>
                                                                 </tr>
                                                             </thead>
-                                                            <tbody className="divide-y divide-gray-100">
+                                                            <motion.tbody initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="divide-y divide-gray-100">
                                                                 {filteredAppointments.length === 0 ? (
                                                                     <tr><td colSpan="6" className="p-8 text-center text-slate-500">Nenhum atendimento realizado encontrado para este filtro.</td></tr>
                                                                 ) : paginatedAppointments.map(a => (
-                                                                    <tr key={a.id} className="hover:bg-slate-50 transition-colors">
+                                                                    <motion.tr variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} key={a.id} className="hover:bg-slate-50 transition-colors">
                                                                         <td className="p-4 font-medium text-slate-700">
                                                                             {new Date(a.completed_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} <br />
                                                                             <span className="text-xs text-slate-500">{new Date(a.completed_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
@@ -1061,17 +1061,17 @@ export default function AdminPage() {
                                                                                 <button onClick={() => handleDelete('appointments', a.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                                                                             </div>
                                                                         </td>
-                                                                    </tr>
+                                                                    </motion.tr>
                                                                 ))}
-                                                            </tbody>
+                                                            </motion.tbody>
                                                         </table>
 
                                                         {/* Mobile Cards para Atendimentos Realizados */}
-                                                        <div className="md:hidden flex flex-col gap-4 mt-2">
+                                                        <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="md:hidden flex flex-col gap-4 mt-2">
                                                             {filteredAppointments.length === 0 ? (
                                                                 <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhum atendimento realizado encontrado para este filtro.</div>
                                                             ) : paginatedAppointments.map(a => (
-                                                                <div key={`mob-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                                <motion.div variants={{ hidden: { opacity: 0, scale: 0.95 }, show: { opacity: 1, scale: 1 } }} key={`mob-${a.id}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
                                                                     <div className="flex justify-between items-start border-b border-slate-100 pb-2">
                                                                         <div>
                                                                             <p className="font-bold text-slate-800 leading-tight">{a.customer_name}</p>
@@ -1111,9 +1111,9 @@ export default function AdminPage() {
                                                                             <button onClick={() => handleDelete('appointments', a.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
                                                                         </div>
                                                                     </div>
-                                                                </div>
+                                                                </motion.div>
                                                             ))}
-                                                        </div>
+                                                        </motion.div>
                                                     </div>
                                                     <div className="flex justify-between items-center mt-4">
                                                         <select value={atmItemsPerPage} onChange={(e) => { setAtmItemsPerPage(Number(e.target.value)); setAtmCurrentPageFuturos(1); setAtmCurrentPageRealizados(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
@@ -1155,7 +1155,7 @@ export default function AdminPage() {
                                     </div>
                                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                                         <div className="flex justify-between items-center mb-4"><h3 className="font-bold text-slate-800 flex items-center gap-2"><Banknote size={20} className="text-blue-600" /> Saldos</h3><button onClick={() => setShowTransferModal(true)} className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-bold flex items-center gap-2 transition-colors"><ArrowRightLeft size={14} /> Transferir</button></div>
-                                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">{displayAccounts.map(acc => (<div key={acc.id} className={`p-4 rounded-xl border ${acc.is_default ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-gray-50 border-gray-200'}`}><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{acc.type === 'banco' ? 'Global' : `Cx. ${acc.region_id || 'Regional'}`}</p><p className="font-bold text-sm sm:text-lg text-slate-900 truncate" title={acc.name}>{acc.name}</p><p className={`text-sm sm:text-xl font-bold mt-1 ${Number(acc.balance) < 0 ? 'text-red-600' : 'text-slate-700'}`}>R$ {Number(acc.balance).toFixed(2)}</p></div>))}</div>
+                                        <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">{displayAccounts.map(acc => (<motion.div variants={{ hidden: { opacity: 0, scale: 0.9 }, show: { opacity: 1, scale: 1, transition: { type: "spring" } } }} key={acc.id} className={`p-4 rounded-xl border ${acc.is_default ? 'bg-blue-50 border-blue-200 ring-1 ring-blue-300' : 'bg-gray-50 border-gray-200'}`}><p className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1">{acc.type === 'banco' ? 'Global' : `Cx. ${acc.region_id || 'Regional'}`}</p><p className="font-bold text-sm sm:text-lg text-slate-900 truncate" title={acc.name}>{acc.name}</p><p className={`text-sm sm:text-xl font-bold mt-1 ${Number(acc.balance) < 0 ? 'text-red-600' : 'text-slate-700'}`}>R$ {Number(acc.balance).toFixed(2)}</p></motion.div>))}</motion.div>
                                     </div>
                                     <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
                                         <div className="p-4 border-b border-gray-100 bg-gray-50 flex flex-col gap-4">
@@ -1206,9 +1206,9 @@ export default function AdminPage() {
                                                         <th className="p-4 text-center">Ações</th>
                                                     </tr>
                                                 </thead>
-                                                <tbody className="divide-y divide-gray-100">
+                                                <motion.tbody initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="divide-y divide-gray-100">
                                                     {paginatedTransactions.map((t, i) => (
-                                                        <tr key={`${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="hover:bg-slate-50 transition-colors">
+                                                        <motion.tr variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} key={`${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="hover:bg-slate-50 transition-colors">
                                                             <td className="p-4 text-slate-500">{new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</td>
                                                             <td className="p-4 font-bold text-slate-700 capitalize flex flex-col whitespace-normal break-words max-w-[200px]" title={t.label}>
                                                                 {t.label.length > 30 ? t.label.substring(0, 30) + '...' : t.label}
@@ -1237,22 +1237,22 @@ export default function AdminPage() {
                                                                     )}
                                                                 </div>
                                                             </td>
-                                                        </tr>
+                                                        </motion.tr>
                                                     ))}
                                                     {paginatedTransactions.length === 0 && (
                                                         <tr>
                                                             <td colSpan="8" className="p-8 text-center text-slate-500">Nenhuma movimentação encontrada para este filtro.</td>
                                                         </tr>
                                                     )}
-                                                </tbody>
+                                                    </motion.tbody>
                                             </table>
 
                                             {/* Mobile Cards para Financeiro */}
-                                            <div className="md:hidden flex flex-col gap-4 mt-2 mb-2">
+                                            <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="md:hidden flex flex-col gap-4 mt-2 mb-2">
                                                 {paginatedTransactions.length === 0 ? (
                                                     <div className="p-8 text-center text-slate-500 border border-slate-100 rounded-xl bg-slate-50">Nenhuma movimentação encontrada para este filtro.</div>
                                                 ) : paginatedTransactions.map((t, i) => (
-                                                    <div key={`mob-fin-${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
+                                                    <motion.div variants={{ hidden: { opacity: 0, scale: 0.95 }, show: { opacity: 1, scale: 1 } }} key={`mob-fin-${t.id}-${t.is_primary ? '1' : '2'}-${i}`} className="bg-white p-3 rounded-xl shadow-md border border-slate-200 flex flex-col gap-2">
                                                         <div className="flex justify-between items-start border-b border-slate-100 pb-2">
                                                             <div className="pr-2">
                                                                 <p className="font-bold text-slate-800 capitalize leading-tight">{t.label.length > 40 ? t.label.substring(0, 40) + '...' : t.label}</p>
@@ -1288,9 +1288,9 @@ export default function AdminPage() {
                                                                 )}
                                                             </div>
                                                         </div>
-                                                    </div>
+                                                    </motion.div>
                                                 ))}
-                                            </div>
+                                            </motion.div>
                                         </div>
                                         <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-white">
                                             <select value={finItemsPerPage} onChange={(e) => { setFinItemsPerPage(Number(e.target.value)); setFinCurrentPage(1); }} className="p-2 border border-gray-200 rounded-lg text-sm text-slate-600 outline-none">
@@ -1334,7 +1334,7 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<motion.div key={i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></motion.div>))}</div>
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<motion.div key={i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></motion.div>))}</motion.div>
                                 </motion.div>
                             )}
 
@@ -1352,18 +1352,18 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     {showAddForm && (<form onSubmit={handleAddInventory} className="bg-slate-50 p-6 rounded-2xl grid grid-cols-4 gap-4 items-end border border-slate-200 animate-in slide-in-from-top-2"><div className="col-span-2"><label className="text-xs font-bold text-slate-500 mb-1 block">Item</label><input className="w-full p-3 border border-gray-200 rounded-xl" required value={newItem.name} onChange={e => setNewItem({ ...newItem, name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Qtd Inicial</label><input className="w-full p-3 border border-gray-200 rounded-xl" type="number" required value={newItem.quantity} onChange={e => setNewItem({ ...newItem, quantity: e.target.value })} /></div><button className="bg-emerald-600 text-white p-3 rounded-xl font-bold hover:bg-emerald-500">Salvar</button></form>)}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                         {[...inventory].sort((a, b) => {
                                             if (invSortOrder === 'qty_desc') return b.quantity - a.quantity;
                                             if (invSortOrder === 'qty_asc') return a.quantity - b.quantity;
                                             return a.name.localeCompare(b.name);
                                         }).map((item, i) => { const isReporEstoque = item.quantity <= item.min_threshold && item.min_threshold >= 0; const isNaoDisponivel = item.quantity <= 0 && item.min_threshold < 0; return (<motion.div key={item.id} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{isReporEstoque && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div><h4 className="font-bold text-slate-800 text-lg group-hover:text-blue-700 transition-colors">{item.name}</h4><div className="mt-1 flex flex-wrap gap-2"><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${(isReporEstoque || isNaoDisponivel) ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isReporEstoque ? 'Repor Estoque' : isNaoDisponivel ? 'Não Disponível' : 'Disponível'}</span>{selectedRegion === 'all' && <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{regions.find(r => r.slug === item.region_id)?.name || item.region_id || 'Matriz'}</span>}</div></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-end gap-2"><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Atual</label><input className="w-14 p-1.5 border border-blue-200 bg-blue-50 rounded text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /></div><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Mín</label><input className="w-14 p-1.5 border border-slate-200 bg-slate-50 rounded text-center font-bold text-slate-700 outline-none" type="number" value={editInvForm.min_threshold} onChange={e => setEditInvForm({ ...editInvForm, min_threshold: e.target.value })} /></div><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></motion.div>); })}
-                                    </div>
+                                    </motion.div>
                                 </motion.div>
                             )}
 
                             {activeTab === 'configuracoes' && (
-                                <motion.div key="configuracoes" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-8">
+                                <motion.div key="configuracoes" initial="hidden" animate="show" exit="exit" variants={{ hidden: { opacity: 0, y: 10 }, show: { opacity: 1, y: 0, transition: { duration: 0.2, staggerChildren: 0.1 } }, exit: { opacity: 0, y: -10, transition: { duration: 0.2 } } }} className="space-y-8">
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         <div className="space-y-6">
                                             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1373,7 +1373,7 @@ export default function AdminPage() {
                                                 </button>
                                                 {showAccountsSettings && (
                                                     <div className="p-6 pt-0 border-t border-gray-100">
-                                                        <div className="space-y-3 mb-6">{accounts.map(acc => (<div key={acc.id} className={`flex justify-between items-center p-3 rounded-xl border transition-all ${acc.is_default ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-300'}`}><div className="flex items-center gap-3">{acc.type === 'banco' && (<button onClick={() => handleSetDefault(acc.id)} className={`p-1.5 rounded-full transition-colors ${acc.is_default ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400 hover:text-yellow-500'}`}><Star size={16} fill={acc.is_default ? "currentColor" : "none"} /></button>)}{acc.type === 'carteira' && <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600"><Wallet size={14} /></div>}<div><p className={`font-bold text-sm ${acc.is_default ? 'text-blue-800' : 'text-slate-700'}`}>{acc.name} {acc.is_default && <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded ml-1 font-bold">PADRÃO</span>}</p><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{acc.region_id ? `Regional ${acc.region_id}` : 'Global'}</p></div></div><div className="flex items-center"><button onClick={() => openEditModal('account', acc)} className="text-slate-300 hover:text-blue-500 p-2 transition-colors mr-1"><Pencil size={16} /></button><button onClick={() => handleDelete('accounts', acc.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></div></div>))}</div>
+                                                        <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.05 } } }} className="space-y-3 mb-6">{accounts.map(acc => (<motion.div variants={{ hidden: { opacity: 0, x: -10 }, show: { opacity: 1, x: 0 } }} key={acc.id} className={`flex justify-between items-center p-3 rounded-xl border transition-all ${acc.is_default ? 'bg-blue-50 border-blue-200 shadow-sm' : 'bg-white border-gray-100 hover:border-gray-300'}`}><div className="flex items-center gap-3">{acc.type === 'banco' && (<button onClick={() => handleSetDefault(acc.id)} className={`p-1.5 rounded-full transition-colors ${acc.is_default ? 'bg-yellow-100 text-yellow-600' : 'bg-gray-100 text-gray-400 hover:text-yellow-500'}`}><Star size={16} fill={acc.is_default ? "currentColor" : "none"} /></button>)}{acc.type === 'carteira' && <div className="w-7 h-7 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-600"><Wallet size={14} /></div>}<div><p className={`font-bold text-sm ${acc.is_default ? 'text-blue-800' : 'text-slate-700'}`}>{acc.name} {acc.is_default && <span className="text-[10px] bg-blue-200 text-blue-800 px-1.5 py-0.5 rounded ml-1 font-bold">PADRÃO</span>}</p><p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{acc.region_id ? `Regional ${acc.region_id}` : 'Global'}</p></div></div><div className="flex items-center"><button onClick={() => openEditModal('account', acc)} className="text-slate-300 hover:text-blue-500 p-2 transition-colors mr-1"><Pencil size={16} /></button><button onClick={() => handleDelete('accounts', acc.id)} className="text-slate-300 hover:text-red-500 p-2 transition-colors"><Trash2 size={16} /></button></div></motion.div>))}</motion.div>
                                                         <div className="bg-slate-50 p-4 rounded-xl border border-slate-100">
                                                             <h5 className="font-bold text-slate-700 text-xs uppercase tracking-wide mb-3">Nova Conta</h5>
                                                             <form onSubmit={handleAddAccount} className="space-y-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Nome da Instituição</label><input className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" required value={newAccount.name} onChange={e => setNewAccount({ ...newAccount, name: e.target.value })} placeholder="Ex: Nubank / Caixa Físico" /></div><div className="grid grid-cols-1 sm:grid-cols-3 gap-3"><div><label className="text-xs font-bold text-slate-500 mb-1 block">Tipo de Conta</label><select className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" value={newAccount.type} onChange={e => setNewAccount({ ...newAccount, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Região</label><select className="w-full p-2.5 bg-white border border-gray-200 rounded-lg focus:border-blue-500 outline-none text-sm" value={newAccount.region_id || 'matriz'} onChange={e => setNewAccount({ ...newAccount, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500 mb-1 block">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-2.5 bg-white border border-gray-200 rounded-lg text-sm" value={newAccount.initial_balance} onChange={e => setNewAccount({ ...newAccount, initial_balance: e.target.value })} placeholder="Saldo Inicial..." /></div></div><button className="w-full bg-slate-800 text-white font-bold py-2.5 rounded-lg text-sm hover:bg-slate-700 transition-colors">Criar Conta</button></form>
