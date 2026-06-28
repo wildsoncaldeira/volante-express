@@ -4,6 +4,8 @@ import { useEffect, useState, use } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
 import { Camera, Save, ArrowLeft, DollarSign, Package, CreditCard, Image as ImageIcon } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { motion } from 'framer-motion';
 import imageCompression from 'browser-image-compression';
 
 export default function AtendimentoPage({ params }) {
@@ -86,12 +88,12 @@ export default function AtendimentoPage({ params }) {
 
   const handleFinish = async () => {
     if (!selectedMaterial || !paymentMethod || !photoFile || !amount) {
-      alert('Preencha todos os campos obrigatórios!');
+      toast.error('Preencha todos os campos obrigatórios!');
       return;
     }
 
     if (isSplitPayment && (!paymentMethod2 || !amount2)) {
-      alert('Preencha os campos da 2ª Forma de Pagamento!');
+      toast.error('Preencha os campos da 2ª Forma de Pagamento!');
       return;
     }
     setSubmitting(true);
@@ -218,7 +220,7 @@ export default function AtendimentoPage({ params }) {
 
       router.push('/'); router.refresh();
 
-    } catch (error) { alert('Erro: ' + error.message); setSubmitting(false); }
+    } catch (error) { toast.error('Erro: ' + error.message); setSubmitting(false); }
   };
 
   // Fix multiple payment rates bug: Deduplicate by finding the correct rates for the appointment's region
@@ -248,7 +250,7 @@ export default function AtendimentoPage({ params }) {
         <h1 className="font-bold text-lg text-white">Finalizar Serviço</h1>
       </div>
 
-      <main className="max-w-md mx-auto p-5 space-y-6 mt-2">
+      <motion.main initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3 }} className="max-w-md mx-auto p-5 space-y-6 mt-2">
         <div className="bg-slate-900 p-5 rounded-2xl border border-slate-800 shadow-md">
           <p className="text-xs text-blue-400 font-bold uppercase mb-1">Veículo</p>
           <h2 className="font-bold text-white text-xl">{appointment.vehicle_model}</h2>
@@ -351,7 +353,7 @@ export default function AtendimentoPage({ params }) {
         <button onClick={handleFinish} disabled={submitting} className={`w-full py-4 rounded-xl font-bold text-white text-lg shadow-lg flex justify-center items-center gap-2 transition-all mt-4 ${submitting ? 'bg-slate-700 cursor-not-allowed' : 'bg-green-600 hover:bg-green-500'}`}>
           {submitting ? 'Salvando...' : <><Save size={22} /> Confirmar Serviço</>}
         </button>
-      </main>
+      </motion.main>
     </div>
   );
 }

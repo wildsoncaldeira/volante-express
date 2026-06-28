@@ -1,4 +1,5 @@
 import "./globals.css";
+import { Toaster } from "react-hot-toast";
 
 export const metadata = {
   title: "Volante Express", 
@@ -22,7 +23,10 @@ export const viewport = {
 export default function RootLayout({ children }) {
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <Toaster position="top-center" />
+        {children}
+      </body>
     </html>
   );
 }

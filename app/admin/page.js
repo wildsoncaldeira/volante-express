@@ -9,6 +9,7 @@ import {
     ArrowRightLeft, Pencil, TrendingUp, Smartphone, Trophy, ListTodo, Search, ChevronDown, ChevronLeft, ChevronRight,
     Maximize, Download
 } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 import {
     BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
     PieChart, Pie, Legend, AreaChart, Area
@@ -172,9 +173,9 @@ export default function AdminPage() {
             .upsert(upsertData, { onConflict: 'region_id,month' });
 
         if (error) {
-            alert('Erro ao salvar metas: ' + error.message);
+            toast.error('Erro ao salvar metas: ' + error.message);
         } else {
-            alert('Metas salvas com sucesso para o mês ' + goalsMonth + '!');
+            toast.success('Metas salvas com sucesso para o mês ' + goalsMonth + '!');
             fetchGoalsForMonth(goalsMonth);
         }
     }
@@ -270,7 +271,7 @@ export default function AdminPage() {
     async function handleDelete(table, id) {
         if (!confirm('Tem certeza absoluta? Essa ação ajustará o saldo automaticamente.')) return;
         const { error } = await supabase.from(table).delete().eq('id', id);
-        if (error) alert('Erro ao excluir: ' + error.message);
+        if (error) toast.error('Erro ao excluir: ' + error.message);
         else fetchData();
     }
 
@@ -348,7 +349,7 @@ export default function AdminPage() {
         fieldsToDelete.forEach(f => delete payload[f]);
 
         const { error } = await supabase.from(table).update(payload).eq('id', editingItem.id);
-        if (error) alert('Erro: ' + error.message);
+        if (error) toast.error('Erro: ' + error.message);
         else { setShowEditModal(false); fetchData(); }
     }
 
@@ -358,12 +359,12 @@ export default function AdminPage() {
         const regionToSave = newAccount.region_id === 'matriz' ? null : newAccount.region_id;
         const { region_id, ...accountFields } = newAccount;
         const { error } = await supabase.from('accounts').insert([{ ...accountFields, region_id: regionToSave, balance: newAccount.initial_balance }]);
-        if (!error) { setNewAccount({ name: '', type: 'banco', initial_balance: 0, region_id: 'matriz' }); fetchData(); alert('Conta criada!'); }
+        if (!error) { setNewAccount({ name: '', type: 'banco', initial_balance: 0, region_id: 'matriz' }); fetchData(); toast.success('Conta criada!'); }
     }
 
     async function handleTransfer(e) {
         e.preventDefault();
-        if (transferData.from === transferData.to) return alert('Contas iguais!');
+        if (transferData.from === transferData.to) return toast.error('Contas iguais!');
         const amount = Number(transferData.amount);
 
         const { data: fromAcc } = await supabase.from('accounts').select('balance').eq('id', transferData.from).single();
@@ -372,7 +373,7 @@ export default function AdminPage() {
         await supabase.from('accounts').update({ balance: (toAcc?.balance || 0) + amount }).eq('id', transferData.to);
         await supabase.from('transfers').insert([{ from_account_id: transferData.from, to_account_id: transferData.to, amount: amount, date: transferData.date, description: 'Transferência Interna' }]);
 
-        setShowTransferModal(false); fetchData(); alert('Transferência realizada!');
+        setShowTransferModal(false); fetchData(); toast.success('Transferência realizada!');
     }
 
     async function handleAddExpense(e) {
@@ -385,8 +386,8 @@ export default function AdminPage() {
             if (acc) await supabase.from('accounts').update({ balance: (acc.balance || 0) - Number(newExpense.amount) }).eq('id', newExpense.account_id);
             setNewExpense({ description: '', amount: '', category_id: '', account_id: '', region_id: selectedRegion === 'all' ? 'matriz' : selectedRegion, date: new Date().toISOString().slice(0, 10) });
             fetchData();
-            alert('Despesa lançada!');
-        } else { alert('Erro: ' + error.message); }
+            toast.success('Despesa lançada!');
+        } else { toast.error('Erro: ' + error.message); }
     }
 
     async function handleAddCategory(e) { e.preventDefault(); await supabase.from('expense_categories').insert([{ name: newCategory }]); setNewCategory(''); fetchData(); }
@@ -394,7 +395,7 @@ export default function AdminPage() {
     async function handleUpdateRate(rate) {
         const { error } = await supabase.from('payment_rates').update({ rate_percent: Number(rate.rate_percent) }).eq('id', rate.id);
         if (error) {
-            alert('Erro ao atualizar taxa: ' + error.message);
+            toast.error('Erro ao atualizar taxa: ' + error.message);
         } else {
             setEditingRate(null);
             fetchData();
@@ -403,7 +404,7 @@ export default function AdminPage() {
     async function handleInitializeRates() {
         const defaultRates = rates.filter(r => !r.region_id);
         if (defaultRates.length === 0) {
-            alert('Nenhuma taxa padrão cadastrada para copiar.');
+            toast.error('Nenhuma taxa padrão cadastrada para copiar.');
             return;
         }
         const newRatesPayload = defaultRates.map(r => ({
@@ -414,8 +415,8 @@ export default function AdminPage() {
             region_id: ratesRegion === 'global' ? null : ratesRegion
         }));
         const { error } = await supabase.from('payment_rates').insert(newRatesPayload);
-        if (error) { alert('Erro ao inicializar taxas: ' + error.message); }
-        else { alert('Taxas inicializadas com sucesso para a regional!'); fetchData(); }
+        if (error) { toast.error('Erro ao inicializar taxas: ' + error.message); }
+        else { toast.success('Taxas inicializadas com sucesso para a regional!'); fetchData(); }
     }
     async function handleAddInventory(e) { e.preventDefault(); const reg = selectedRegion === 'all' ? 'divinopolis' : selectedRegion; await supabase.from('inventory').insert([{ ...newItem, region_id: reg }]); setNewItem({ name: '', quantity: 0, min_threshold: 5 }); setShowAddForm(false); fetchData(); }
     async function handleUpdateInventory(id) { await supabase.from('inventory').update({ quantity: editInvForm.quantity, min_threshold: editInvForm.min_threshold }).eq('id', id); setIsEditingInv(null); fetchData(); }
@@ -726,9 +727,9 @@ export default function AdminPage() {
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 bg-gray-100">
                     {loading ? <div className="h-full flex items-center justify-center text-slate-400">Carregando dados...</div> : (
                         <div className="max-w-7xl mx-auto animate-in fade-in space-y-6">
-
+                            <AnimatePresence mode="wait">
                             {activeTab === 'dashboard' && (
-                                <>
+                                <motion.div key="dashboard" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }}>
                                     <h3 className="font-bold text-slate-800 mb-4 flex items-center gap-2"><TrendingUp size={20} className="text-blue-600" /> Balanço Financeiro</h3>
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                         <div className="bg-white p-5 rounded-2xl border border-gray-100 flex flex-col justify-between h-full"><p className="text-slate-500 text-[10px] sm:text-xs font-bold uppercase mb-2">Faturamento Bruto</p><h3 className="text-xl sm:text-2xl font-bold text-slate-900 truncate" title={`R$ ${dashboardStats.totalGross.toFixed(2)}`}>R$ {dashboardStats.totalGross.toFixed(2)}</h3></div>
@@ -847,11 +848,11 @@ export default function AdminPage() {
                                             </ResponsiveContainer>
                                         </div>
                                     </div>
-                                </>
+                                </motion.div>
                             )}
 
                             {activeTab === 'atendimentos' && (
-                                <div className="space-y-6">
+                                <motion.div key="atendimentos" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                                         <div className="flex justify-between items-center mb-6">
                                             <h3 className="font-bold text-slate-800 flex items-center gap-2"><ListTodo size={20} className="text-blue-600" /> Atendimentos</h3>
@@ -1129,11 +1130,11 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             )}
 
                             {activeTab === 'financeiro' && (
-                                <div className="space-y-6">
+                                <motion.div key="financeiro" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                                     <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                                         <div className="flex justify-between items-center mb-4">
                                             <h3 className="font-bold text-slate-800 flex items-center gap-2"><TrendingDown className="text-red-500" size={20} /> Nova Despesa</h3>
@@ -1303,11 +1304,11 @@ export default function AdminPage() {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             )}
 
                             {activeTab === 'equipe' && (
-                                <div className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                                <motion.div key="equipe" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
                                     <div className="flex flex-col md:flex-row justify-between md:items-center gap-4 mb-6">
                                         <h3 className="font-bold text-slate-800 flex items-center gap-2"><Users size={20} className="text-blue-600" /> Gestão de Equipe</h3>
                                         
@@ -1333,11 +1334,11 @@ export default function AdminPage() {
                                         </div>
                                     </div>
                                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<div key={i} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></div>))}</div>
-                                </div>
+                                </motion.div>
                             )}
 
                             {activeTab === 'estoque' && (
-                                <div className="space-y-6">
+                                <motion.div key="estoque" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
                                     <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-4">
                                         <div><h3 className="font-bold text-slate-700 flex items-center gap-2"><Package size={20} className="text-blue-600" /> Inventário {selectedRegion === 'all' ? 'Global' : selectedRegion}</h3></div>
                                         <div className="flex w-full md:w-auto gap-2">
@@ -1357,11 +1358,11 @@ export default function AdminPage() {
                                             return a.name.localeCompare(b.name);
                                         }).map(item => { const isReporEstoque = item.quantity <= item.min_threshold && item.min_threshold >= 0; const isNaoDisponivel = item.quantity <= 0 && item.min_threshold < 0; return (<div key={item.id} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{isReporEstoque && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div><h4 className="font-bold text-slate-800 text-lg group-hover:text-blue-700 transition-colors">{item.name}</h4><div className="mt-1 flex flex-wrap gap-2"><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${(isReporEstoque || isNaoDisponivel) ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isReporEstoque ? 'Repor Estoque' : isNaoDisponivel ? 'Não Disponível' : 'Disponível'}</span>{selectedRegion === 'all' && <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{regions.find(r => r.slug === item.region_id)?.name || item.region_id || 'Matriz'}</span>}</div></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-end gap-2"><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Atual</label><input className="w-14 p-1.5 border border-blue-200 bg-blue-50 rounded text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /></div><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Mín</label><input className="w-14 p-1.5 border border-slate-200 bg-slate-50 rounded text-center font-bold text-slate-700 outline-none" type="number" value={editInvForm.min_threshold} onChange={e => setEditInvForm({ ...editInvForm, min_threshold: e.target.value })} /></div><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></div>); })}
                                     </div>
-                                </div>
+                                </motion.div>
                             )}
 
                             {activeTab === 'configuracoes' && (
-                                <div className="space-y-8">
+                                <motion.div key="configuracoes" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-8">
                                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                                         <div className="space-y-6">
                                             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
@@ -1469,8 +1470,9 @@ export default function AdminPage() {
                                             </div>
                                         </div>
                                     </div>
-                                </div>
+                                </motion.div>
                             )}
+                        </AnimatePresence>
                         </div>
                     )}
                 </main>

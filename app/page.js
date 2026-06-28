@@ -4,6 +4,8 @@ import { useEffect, useState, Suspense } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Plus, Car, MapPin, Calendar, ChevronRight, Loader2, ListTodo, Wallet, User, Clock, Lock, LogOut, Camera, Package, Trophy } from 'lucide-react';
+import { toast } from 'react-hot-toast';
+import { motion, AnimatePresence } from 'framer-motion';
 
 // --- COMPONENTE INTERNO (Lógica Principal) ---
 function HomeContent() {
@@ -221,14 +223,14 @@ function HomeContent() {
       status: 'agendado', appointment_at: new Date().toISOString(),
       region_id: profile?.region_id || 'divinopolis'
     }]).select().single();
-    if (error) alert('Erro: ' + error.message);
+    if (error) toast.error('Erro: ' + error.message);
     else router.push(`/atendimento/${data.id}`);
     setCreating(false);
   };
 
   const openWhatsApp = (e, phone) => {
     e.stopPropagation();
-    if (!phone) return alert('Cliente sem número de telefone cadastrado.');
+    if (!phone) return toast.error('Cliente sem número de telefone cadastrado.');
     let num = phone.replace(/\D/g, '');
     if (num.length === 10 || num.length === 11) num = '55' + num;
     window.open(`https://wa.me/${num}`, '_blank');
@@ -240,7 +242,7 @@ function HomeContent() {
     const newPass = prompt("Digite a nova senha (mínimo 6 dígitos):");
     if (!newPass) return;
     const { error } = await supabase.auth.updateUser({ password: newPass });
-    if (error) alert('Erro: ' + error.message); else alert('Senha alterada com sucesso!');
+    if (error) toast.error('Erro: ' + error.message); else toast.success('Senha alterada com sucesso!');
   }
 
   if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>;
@@ -263,15 +265,16 @@ function HomeContent() {
       </div>
 
       <main className="p-6 space-y-6">
+        <AnimatePresence mode="wait">
         {activeTab === 'perfil' && (
-          <div className="text-center">
+          <motion.div key="perfil" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="text-center">
             <h1 className="text-lg text-slate-400 font-anton-italic-bold">
               Perfil
             </h1>
-          </div>
+          </motion.div>
         )}
         {activeTab === 'agenda' && (
-          <>
+          <motion.div key="agenda" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
             {/* CARD DE METAS */}
             {monthlyGoal > 0 && (
               <div className="bg-slate-900 p-5 rounded-3xl border border-slate-800 relative overflow-hidden shadow-lg">
@@ -330,7 +333,7 @@ function HomeContent() {
                   }
 
                   return (
-                    <div key={app.id} className="space-y-3">
+                    <motion.div key={app.id} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.2 }} className="space-y-3">
                       {showDivider && (
                         <div className="text-xs font-bold text-slate-500 uppercase tracking-wider mt-6 mb-2 border-l-2 border-blue-500 pl-2 text-left">
                           {dividerLabel}
@@ -362,15 +365,15 @@ function HomeContent() {
                           </div>
                         </div>
                       </div>
-                    </div>
+                    </motion.div>
                   );
                 });
               })()}
             </div>
-          </>
+          </motion.div>
         )}
         {activeTab === 'perfil' && (
-          <div className="space-y-6">
+          <motion.div key="perfil-content" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.2 }} className="space-y-6">
             {/* Perfil Info Card */}
             <div className="bg-slate-900 p-6 rounded-3xl border border-slate-800 text-center relative overflow-hidden shadow-lg">
               <div className="w-24 h-24 bg-slate-800 rounded-full mx-auto mb-4 border-4 border-slate-700 flex items-center justify-center relative shadow-inner">
@@ -408,8 +411,9 @@ function HomeContent() {
                 </div>
               </button>
             </div>
-          </div>
+          </motion.div>
         )}
+        </AnimatePresence>
       </main>
 
       {activeTab === 'agenda' && (<button onClick={handleNewService} disabled={creating} className="fixed bottom-24 right-6 w-14 h-14 bg-blue-600 hover:bg-blue-500 rounded-2xl shadow-lg shadow-blue-600/30 flex items-center justify-center text-white transition-transform active:scale-90 z-30">{creating ? <Loader2 className="animate-spin" /> : <Plus size={28} />}</button>)}

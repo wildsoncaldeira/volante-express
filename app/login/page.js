@@ -4,6 +4,8 @@ import { createBrowserClient } from '@supabase/ssr'; // <--- MUDOU AQUI (Era @su
 import { useRouter } from 'next/navigation';
 import { Lock, Mail, Loader2, ArrowRight } from 'lucide-react';
 
+import { toast } from 'react-hot-toast';
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,7 +28,7 @@ export default function LoginPage() {
     });
 
     if (error) {
-      alert('Erro: ' + error.message);
+      toast.error('Erro: ' + error.message);
       setLoading(false);
     } else {
       // Login sucesso: Atualiza a página para o Middleware pegar o cookie novo
