@@ -245,7 +245,7 @@ function HomeContent() {
     if (error) toast.error('Erro: ' + error.message); else toast.success('Senha alterada com sucesso!');
   }
 
-  if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>;
+  if (loading) return <div className="min-h-screen bg-slate-950 flex items-center justify-center text-white"><img src="/3dgifmaker62652.gif" alt="Carregando..." className="w-48 h-48 object-contain" /></div>;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-200 pb-32 font-sans">
@@ -440,7 +440,7 @@ function HomeContent() {
 // --- COMPONENTE EXPORTADO (A Proteção) ---
 export default function HomePage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>}>
+    <Suspense fallback={<div className="min-h-screen bg-slate-950 flex items-center justify-center text-white"><img src="/3dgifmaker62652.gif" alt="Carregando..." className="w-48 h-48 object-contain" /></div>}>
       <HomeContent />
     </Suspense>
   );

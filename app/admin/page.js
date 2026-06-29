@@ -726,7 +726,7 @@ export default function AdminPage() {
                 </div>
 
                 <main className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8 bg-gray-100">
-                    {loading ? <div className="h-full flex items-center justify-center text-slate-400">Carregando dados...</div> : (
+                    {loading ? <div className="h-full min-h-[60vh] flex items-center justify-center"><img src="/3dgifmaker62652.gif" alt="Carregando..." className="w-48 h-48 object-contain" /></div> : (
                         <div className="max-w-7xl mx-auto animate-in fade-in space-y-6">
                             <AnimatePresence mode="wait">
                             {activeTab === 'dashboard' && (
