@@ -40,23 +40,24 @@ export default function AtendimentoPage({ params }) {
   const [photoFile, setPhotoFile] = useState(null);
   const [photoPreview, setPhotoPreview] = useState(null);
 
-  // NOVO: Estado para armazenar a comissão do usuário logado
+  // NOVO: Estado para armazenar comissão e nome do instalador
   const [myCommission, setMyCommission] = useState(0);
+  const [installerName, setInstallerName] = useState('');
 
   useEffect(() => { loadData(); }, [id]);
 
   async function loadData() {
     try {
-      // 0. Busca Usuário Logado e sua Comissão Fixa
+      // 0. Busca Usuário Logado e seu Perfil
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('commission_rate')
+          .select('commission_rate, full_name, name')
           .eq('id', user.id)
           .single();
-        // Se tiver valor no banco usa ele, senão assume 0
         setMyCommission(profile?.commission_rate || 0);
+        setInstallerName(profile?.full_name || profile?.name || user.email || '');
       }
 
       // 1. Busca Agendamento
@@ -216,6 +217,31 @@ export default function AtendimentoPage({ params }) {
       if (isSplitPayment && targetAccountId2) {
         const { data: accNow2 } = await supabase.from('accounts').select('balance').eq('id', targetAccountId2).single();
         if (accNow2) await supabase.from('accounts').update({ balance: (accNow2.balance || 0) + netVal2 }).eq('id', targetAccountId2);
+      }
+
+      // 7. Dispara Notificação no Telegram (Background / Não bloqueante)
+      try {
+        const materialObj = inventory.find(i => i.id === selectedMaterial);
+        fetch('/api/notifications/telegram', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            customer_name: appointment.customer_name,
+            vehicle_model: appointment.vehicle_model,
+            vehicle_year: appointment.vehicle_year,
+            calendar_name: appointment.calendar_name,
+            gross_amount: grossVal,
+            payment_method: paymentMethod,
+            is_split_payment: isSplitPayment,
+            gross_amount_2: grossVal2,
+            payment_method_2: paymentMethod2,
+            material_name: materialObj?.name || 'Instalação',
+            installer_name: installerName,
+            photo_url: publicUrl
+          })
+        }).catch(err => console.error('Erro ao enviar notificação:', err));
+      } catch (tErr) {
+        console.error('Telegram notification error:', tErr);
       }
 
       router.push('/'); router.refresh();
