@@ -7,7 +7,7 @@ import {
     Star, Package, Plus, Save, Eye, X, PieChart as PieIcon,
     BarChart3, Users, LayoutDashboard, LogOut, Wallet,
     ArrowRightLeft, Pencil, TrendingUp, Smartphone, Trophy, ListTodo, Search, ChevronDown, ChevronLeft, ChevronRight,
-    Maximize, Download
+    Maximize, Download, Target
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -26,6 +26,7 @@ export default function AdminPage() {
     );
 
     const [activeTab, setActiveTab] = useState('dashboard');
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [atendimentosTab, setAtendimentosTab] = useState('realizados');
     const [regions, setRegions] = useState([]);
     const [selectedRegion, setSelectedRegion] = useState('all');
@@ -37,6 +38,7 @@ export default function AdminPage() {
     const [futureAppointments, setFutureAppointments] = useState([]);
     const [expenses, setExpenses] = useState([]);
     const [accounts, setAccounts] = useState([]);
+    const [transfers, setTransfers] = useState([]);
     const [rates, setRates] = useState([]);
     const [inventory, setInventory] = useState([]);
     const [installers, setInstallers] = useState([]);
@@ -233,23 +235,33 @@ export default function AdminPage() {
         let apps = appsData || [];
         let futureApps = futureAppsData || [];
 
-        // 3. Despesas
+        // 3. Despesas e Transferências
         let expQuery = supabase.from('expenses').select('*, expense_categories(name)');
+        let transQuery = supabase.from('transfers').select('*');
         if (startRange && endRange) {
             expQuery = expQuery.gte('date', startRange).lte('date', endRange);
+            transQuery = transQuery.gte('date', startRange).lte('date', endRange);
         }
         const { data: expsData } = await expQuery;
+        const { data: transData } = await transQuery;
         let exps = expsData || [];
+        let trans = transData || [];
 
         if (selectedRegion !== 'all') {
             apps = apps.filter(a => (a.region_id || 'divinopolis') === selectedRegion);
             futureApps = futureApps.filter(a => (a.region_id || 'divinopolis') === selectedRegion);
             exps = exps.filter(e => (e.region_id || 'divinopolis') === selectedRegion);
+            trans = trans.filter(t => {
+                const fAcc = accs.find(a => a.id === t.from_account_id);
+                const tAcc = accs.find(a => a.id === t.to_account_id);
+                return (fAcc?.region_id || 'divinopolis') === selectedRegion || (tAcc?.region_id || 'divinopolis') === selectedRegion;
+            });
         }
 
         setAppointments(apps.filter(a => a.status === 'concluido'));
         setFutureAppointments(futureApps);
         setExpenses(exps);
+        setTransfers(trans);
 
         // 4. Estoque
         let invQuery = supabase.from('inventory').select('*').order('name');
@@ -321,7 +333,7 @@ export default function AdminPage() {
             if (gross1 !== currentGross1) {
                 let ratePercent = payload.payment_rate_snapshot || 0;
                 if (ratePercent === 0 && currentGross1 > 0) ratePercent = 100 - ((parseFloat(payload.net_amount || 0) / currentGross1) * 100);
-                payload.net_amount = gross1 - (gross1 * (ratePercent / 100));
+                payload.net_amount = Math.round((gross1 - (gross1 * (ratePercent / 100))) * 100) / 100;
             }
             if (payload._new_account_id) payload.account_id = payload._new_account_id;
 
@@ -332,7 +344,7 @@ export default function AdminPage() {
                 if (gross2 !== currentGross2) {
                     let ratePercent2 = payload.payment_rate_snapshot_2 || 0;
                     if (ratePercent2 === 0 && currentGross2 > 0) ratePercent2 = 100 - ((parseFloat(payload.net_amount_2 || 0) / currentGross2) * 100);
-                    payload.net_amount_2 = gross2 - (gross2 * (ratePercent2 / 100));
+                    payload.net_amount_2 = Math.round((gross2 - (gross2 * (ratePercent2 / 100))) * 100) / 100;
                 }
                 if (payload._new_account_id_2) payload.account_id_2 = payload._new_account_id_2;
             } else {
@@ -590,6 +602,20 @@ export default function AdminPage() {
                     account_name: expAccount?.name || 'Conta Excluída',
                     account_region: expAccount?.region_id
                 };
+            }),
+            ...transfers.flatMap(t => {
+                const fromAcc = accounts.find(acc => acc.id === t.from_account_id);
+                const toAcc = accounts.find(acc => acc.id === t.to_account_id);
+                return [
+                    {
+                        ...t, id: t.id + '_out', type: 'out', date: t.date, val: t.amount, net_val: t.amount, city: '',
+                        label: t.description || 'Transferência Enviada', account_name: fromAcc?.name || 'Conta Excluída', account_region: fromAcc?.region_id
+                    },
+                    {
+                        ...t, id: t.id + '_in', type: 'in', date: t.date, val: t.amount, net_val: t.amount, city: '',
+                        label: t.description || 'Transferência Recebida', account_name: toAcc?.name || 'Conta Excluída', account_region: toAcc?.region_id
+                    }
+                ];
             })
         ].sort((a, b) => new Date(b.date) - new Date(a.date)).filter(t => {
             let matches = true;
@@ -669,9 +695,9 @@ export default function AdminPage() {
     // --- COMPONENTE BOTTOM NAV (QUE FALTAVA!) ---
     const BottomNav = () => (
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom overflow-x-auto">
-            {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'configuracoes'].map(tab => (
-                <button key={tab} onClick={() => setActiveTab(tab)} className={`flex flex-col items-center gap-1 p-2 flex-shrink-0 ${activeTab === tab ? 'text-blue-500' : 'text-slate-500'}`}>
-                    {tab === 'dashboard' ? <LayoutDashboard size={22} /> : tab === 'atendimentos' ? <ListTodo size={22} /> : tab === 'financeiro' ? <Banknote size={22} /> : tab === 'equipe' ? <Users size={22} /> : tab === 'estoque' ? <Package size={22} /> : <Settings size={22} />}
+            {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'configuracoes'].map(tab => (
+                <button key={tab} onClick={() => { if (tab === 'meta') router.push('/admin/meta'); else setActiveTab(tab); }} className={`flex flex-col items-center gap-1 p-2 flex-shrink-0 ${activeTab === tab ? 'text-blue-500' : 'text-slate-500'}`}>
+                    {tab === 'dashboard' ? <LayoutDashboard size={22} /> : tab === 'atendimentos' ? <ListTodo size={22} /> : tab === 'financeiro' ? <Banknote size={22} /> : tab === 'equipe' ? <Users size={22} /> : tab === 'estoque' ? <Package size={22} /> : tab === 'meta' ? <Target size={22} /> : <Settings size={22} />}
                 </button>
             ))}
         </div>
@@ -679,28 +705,50 @@ export default function AdminPage() {
 
     return (
         <div className="min-h-screen bg-gray-50 font-sans text-slate-800 flex">
-            <aside className="hidden md:flex w-64 flex-col bg-slate-900 text-slate-300 h-screen fixed left-0 top-0 z-50">
-                <div className="p-6 flex justify-center border-b border-slate-800"><img src="/icon-horizontal.png" alt="Logo" className="h-10 object-contain brightness-0 invert opacity-90" /></div>
-                <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
-                    {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'configuracoes'].map(tab => (
-                        <button key={tab} onClick={() => setActiveTab(tab)} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all font-medium capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-slate-800 hover:text-white'}`}>
-                            {tab === 'dashboard' && <LayoutDashboard size={20} />}
-                            {tab === 'atendimentos' && <ListTodo size={20} />}
-                            {tab === 'financeiro' && <Banknote size={20} />}
-                            {tab === 'equipe' && <Users size={20} />}
-                            {tab === 'estoque' && <Package size={20} />}
-                            {tab === 'configuracoes' && <Settings size={20} />}
-                            {tab === 'configuracoes' ? 'Configurações' : tab}
+            <aside className={`hidden md:flex flex-col bg-slate-900 text-slate-300 h-screen fixed left-0 top-0 z-50 transition-all duration-300 ${isSidebarCollapsed ? 'w-20' : 'w-64'}`}>
+                <div className="p-6 flex justify-center border-b border-slate-800">
+                    {isSidebarCollapsed ? (
+                        <img src="/icon-horizontal.png" alt="Logo" className="h-8 object-contain brightness-0 invert opacity-90 object-left" style={{ objectFit: 'cover', width: '32px' }} />
+                    ) : (
+                        <img src="/icon-horizontal.png" alt="Logo" className="h-10 object-contain brightness-0 invert opacity-90" />
+                    )}
+                </div>
+                <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
+                    {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'configuracoes'].map(tab => (
+                        <button key={tab} title={tab} onClick={() => { if (tab === 'meta') router.push('/admin/meta'); else setActiveTab(tab); }} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-xl transition-all font-medium capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-slate-800 hover:text-white'}`}>
+                            {tab === 'dashboard' && <LayoutDashboard size={20} className="shrink-0" />}
+                            {tab === 'atendimentos' && <ListTodo size={20} className="shrink-0" />}
+                            {tab === 'financeiro' && <Banknote size={20} className="shrink-0" />}
+                            {tab === 'equipe' && <Users size={20} className="shrink-0" />}
+                            {tab === 'estoque' && <Package size={20} className="shrink-0" />}
+                            {tab === 'meta' && <Target size={20} className="shrink-0" />}
+                            {tab === 'configuracoes' && <Settings size={20} className="shrink-0" />}
+                            {!isSidebarCollapsed && (
+                                <span className="truncate">{tab === 'configuracoes' ? 'Configurações' : tab === 'meta' ? 'Meta Ads' : tab}</span>
+                            )}
                         </button>
                     ))}
                 </nav>
-                <div className="p-4 border-t border-slate-800">
-                    <button onClick={() => window.open('/?mode=preview', '_blank')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-slate-800 text-blue-400 transition-all font-medium mb-2"><Smartphone size={20} /> Ver App</button>
-                    <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-red-900/30 text-red-400 transition-all font-medium"><LogOut size={20} /> Sair</button>
+                <div className="p-4 border-t border-slate-800 relative">
+                    <button 
+                        onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} 
+                        className="absolute -top-4 right-4 bg-slate-900 border border-slate-700 text-slate-400 hover:text-white rounded-full p-1 cursor-pointer transition-colors z-10 hover:scale-110"
+                        title={isSidebarCollapsed ? "Expandir Menu" : "Recolher Menu"}
+                    >
+                        {isSidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
+                    </button>
+                    <button title="Ver App" onClick={() => window.open('/?mode=preview', '_blank')} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-xl hover:bg-slate-800 text-blue-400 transition-all font-medium mb-2`}>
+                        <Smartphone size={20} className="shrink-0" />
+                        {!isSidebarCollapsed && <span className="truncate">Ver App</span>}
+                    </button>
+                    <button title="Sair" onClick={handleLogout} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-xl hover:bg-red-900/30 text-red-400 transition-all font-medium`}>
+                        <LogOut size={20} className="shrink-0" />
+                        {!isSidebarCollapsed && <span className="truncate">Sair</span>}
+                    </button>
                 </div>
             </aside>
 
-            <div className="flex-1 md:ml-64 flex flex-col h-screen overflow-hidden">
+            <div className={`flex-1 flex flex-col h-screen overflow-hidden transition-all duration-300 ${isSidebarCollapsed ? 'md:ml-20' : 'md:ml-64'}`}>
                 <div className="bg-slate-900 border-b border-slate-800 p-4 md:p-6 flex flex-col md:flex-row justify-between items-center gap-4 shadow-sm z-40 relative text-white">
                     <div className="w-full flex justify-between md:hidden items-center">
                         <img src="/icon-horizontal.png" alt="Logo" className="h-8 object-contain brightness-0 invert" />
@@ -1480,7 +1528,7 @@ export default function AdminPage() {
             </div >
 
             {/* COMPONENTES EXTRAS (Modais e Navegação) */}
-            < BottomNav />
+            {BottomNav()}
 
             {showEditModal && editingItem && (<div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"><div className={`bg-white rounded-2xl w-full ${modalType === 'appointment' ? 'max-w-xl' : 'max-w-md'} p-6 shadow-2xl animate-in zoom-in-95 max-h-[90vh] overflow-y-auto`}><h3 className="text-xl font-bold mb-4 text-slate-900 flex items-center gap-2"><Pencil size={20} /> Editar Item</h3><div className="space-y-4">{modalType === 'appointment' && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

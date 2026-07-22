@@ -128,7 +128,8 @@ export default function AtendimentoPage({ params }) {
       const finalInstallments = paymentMethod === 'credito' ? parseInt(installments) : 1;
       const rateObj = findRateObj(paymentMethod, finalInstallments);
       const taxPercent = rateObj ? rateObj.rate_percent : 0;
-      const netVal = grossVal - (grossVal * (taxPercent / 100));
+      const netValRaw = grossVal - (grossVal * (taxPercent / 100));
+      const netVal = Math.round(netValRaw * 100) / 100;
 
       // 2.1 Cálculos Financeiros - Pagamento 2 (Se houver)
       let grossVal2 = 0, finalInstallments2 = 1, taxPercent2 = 0, netVal2 = 0;
@@ -137,7 +138,8 @@ export default function AtendimentoPage({ params }) {
         finalInstallments2 = paymentMethod2 === 'credito' ? parseInt(installments2) : 1;
         const rateObj2 = findRateObj(paymentMethod2, finalInstallments2);
         taxPercent2 = rateObj2 ? rateObj2.rate_percent : 0;
-        netVal2 = grossVal2 - (grossVal2 * (taxPercent2 / 100));
+        const netVal2Raw = grossVal2 - (grossVal2 * (taxPercent2 / 100));
+        netVal2 = Math.round(netVal2Raw * 100) / 100;
       }
 
       // 3. Escolher Conta de Destino - Pagamento 1
