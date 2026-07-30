@@ -65,18 +65,38 @@ export default function ExtratoPage() {
         endRange = end.toISOString();
       }
 
-      const { data: services, error } = await supabase
+      const [anoStr, mesStr] = month.split('-');
+      const monthStart = new Date(anoStr, mesStr - 1, 1).toISOString();
+      const monthEnd = new Date(anoStr, mesStr, 0, 23, 59, 59).toISOString();
+
+      const { data: goalsData } = await supabase.from('regional_goals').select('*').eq('region_id', profileData.region_id).eq('month', month);
+      const regionGoal = goalsData && goalsData.length > 0 ? goalsData[0].goal_amount : 0;
+      const extraRate = Number(profileData.extra_commission_rate) || 0;
+
+      const { data: allServices, error } = await supabase
         .from('appointments')
         .select('*')
         .eq('user_id', currentUser.id)
         .eq('status', 'concluido')
-        .gte('completed_at', startRange)
-        .lte('completed_at', endRange)
-        .order('completed_at', { ascending: false });
+        .gte('completed_at', monthStart)
+        .lte('completed_at', monthEnd)
+        .order('completed_at', { ascending: true });
 
-      if (services) {
-        setTransactions(services);
-        const total = services.reduce((acc, curr) => acc + (Number(curr.commission_amount) || 0), 0);
+      if (allServices) {
+        let count = 0;
+        allServices.forEach(s => {
+            count++;
+            s.displayAmount = Number(s.commission_amount) || 0;
+            if (regionGoal > 0 && count > regionGoal && extraRate > 0) {
+                s.isBonus = true;
+                s.displayAmount += extraRate;
+            }
+        });
+
+        const filteredServices = allServices.filter(s => s.completed_at >= startRange && s.completed_at <= endRange).reverse();
+
+        setTransactions(filteredServices);
+        const total = filteredServices.reduce((acc, curr) => acc + curr.displayAmount, 0);
         setTotalCommission(total);
       }
     }
@@ -209,7 +229,8 @@ export default function ExtratoPage() {
                       </p>
                     </div>
                     <div className="text-right">
-                      <span className="block font-bold text-green-400">+ R$ {Number(t.commission_amount).toFixed(2)}</span>
+                      <span className="block font-bold text-green-400">+ R$ {Number(t.displayAmount).toFixed(2)}</span>
+                      {t.isBonus && <span className="text-[10px] text-green-600 bg-green-100/10 px-2 py-0.5 rounded-full uppercase mt-1 inline-block font-bold mr-1 border border-green-600/30">Bônus Meta</span>}
                       <span className="text-[10px] text-slate-600 bg-slate-800 px-2 py-0.5 rounded-full uppercase mt-1 inline-block font-bold">
                         Concluído
                       </span>

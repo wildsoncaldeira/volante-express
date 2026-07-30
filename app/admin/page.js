@@ -47,6 +47,7 @@ export default function AdminPage() {
 
     // Dados
     const [appointments, setAppointments] = useState([]);
+    const [monthlyAppointments, setMonthlyAppointments] = useState([]);
     const [futureAppointments, setFutureAppointments] = useState([]);
     const [expenses, setExpenses] = useState([]);
     const [accounts, setAccounts] = useState([]);
@@ -55,6 +56,7 @@ export default function AdminPage() {
     const [inventory, setInventory] = useState([]);
     const [installers, setInstallers] = useState([]);
     const [categories, setCategories] = useState([]);
+    const [globalGoals, setGlobalGoals] = useState([]);
 
     // Filtros Atendimentos
     const [atmSearchTerm, setAtmSearchTerm] = useState('');
@@ -92,6 +94,7 @@ export default function AdminPage() {
     // Edição Rápida
     const [editingRate, setEditingRate] = useState(null);
     const [isEditingInv, setIsEditingInv] = useState(null);
+    const [isEditingNameInv, setIsEditingNameInv] = useState(null);
     const [editInvForm, setEditInvForm] = useState({});
     const [invSortOrder, setInvSortOrder] = useState('qty_desc');
 
@@ -247,6 +250,13 @@ export default function AdminPage() {
         let apps = appsData || [];
         let futureApps = futureAppsData || [];
 
+        if (activeTab === 'equipe' && equipeViewType === 'semanal') {
+            const { data: mData } = await supabase.from('appointments').select('*').gte('appointment_at', new Date(Number(ano), Number(mes) - 1, 1).toISOString()).lte('appointment_at', new Date(Number(ano), Number(mes), 0, 23, 59, 59).toISOString()).eq('status', 'concluido');
+            setMonthlyAppointments(mData || []);
+        } else {
+            setMonthlyAppointments(apps.filter(a => a.status === 'concluido'));
+        }
+
         // 3. Despesas e Transferências
         let expQuery = supabase.from('expenses').select('*, expense_categories(name)');
         let transQuery = supabase.from('transfers').select('*');
@@ -288,6 +298,9 @@ export default function AdminPage() {
         setCategories(cats || []);
         const { data: rt } = await supabase.from('payment_rates').select('*').order('installments');
         setRates(rt || []);
+
+        const { data: gData } = await supabase.from('regional_goals').select('*').eq('month', selectedMonth);
+        setGlobalGoals(gData || []);
 
         setLoading(false);
     }
@@ -444,7 +457,7 @@ export default function AdminPage() {
         else { toast.success('Taxas inicializadas com sucesso para a regional!'); fetchData(); }
     }
     async function handleAddInventory(e) { e.preventDefault(); const reg = selectedRegion === 'all' ? 'divinopolis' : selectedRegion; await supabase.from('inventory').insert([{ ...newItem, region_id: reg }]); setNewItem({ name: '', quantity: 0, min_threshold: 5 }); setShowAddForm(false); fetchData(); }
-    async function handleUpdateInventory(id) { await supabase.from('inventory').update({ quantity: editInvForm.quantity, min_threshold: editInvForm.min_threshold }).eq('id', id); setIsEditingInv(null); fetchData(); }
+    async function handleUpdateInventory(id) { await supabase.from('inventory').update({ name: editInvForm.name, quantity: editInvForm.quantity, min_threshold: editInvForm.min_threshold }).eq('id', id); setIsEditingInv(null); setIsEditingNameInv(null); fetchData(); }
     async function handleLogout() { await supabase.auth.signOut(); router.push('/login'); }
 
     // --- CÁLCULOS BI ---
@@ -523,15 +536,39 @@ export default function AdminPage() {
     }, [appointments, expenses, installers, selectedMonth, futureAppointments, inventory]);
 
     const commissionReport = useMemo(() => {
+        const appsToCount = (activeTab === 'equipe' && equipeViewType === 'semanal') ? monthlyAppointments : appointments;
+        
         return installers.map(inst => {
-            const myApps = appointments.filter(a => a.user_id === inst.id);
-            const total = myApps.reduce((acc, curr) => acc + (Number(curr.commission_amount) || 0), 0);
+            const myMonthlyApps = appsToCount.filter(a => a.user_id === inst.id).sort((a, b) => new Date(a.completed_at || a.appointment_at) - new Date(b.completed_at || b.appointment_at));
+            const myWeeklyApps = appointments.filter(a => a.user_id === inst.id);
+            
+            let total = 0;
+            let bonusAmount = 0;
+            let goalReached = false;
+            
+            const regionGoal = globalGoals.find(g => g.region_id === inst.region_id)?.goal_amount || 0;
+            const extraRate = Number(inst.extra_commission_rate) || 0;
+
+            for (let app of myWeeklyApps) {
+                total += (Number(app.commission_amount) || 0);
+                const indexInMonth = myMonthlyApps.findIndex(ma => ma.id === app.id);
+                if (indexInMonth >= 0 && regionGoal > 0 && (indexInMonth + 1) > regionGoal) {
+                    bonusAmount += extraRate;
+                }
+            }
+
+            if (regionGoal > 0 && myMonthlyApps.length >= regionGoal) {
+                goalReached = true;
+            }
+            
+            total += bonusAmount;
+
             return {
-                id: inst.id, name: inst.full_name || inst.email, count: myApps.length, total: total,
-                region_id: inst.region_id
+                id: inst.id, name: inst.full_name || inst.email, count: myWeeklyApps.length, total: total,
+                region_id: inst.region_id, goalReached, bonusAmount, goal: regionGoal
             };
         });
-    }, [appointments, installers]);
+    }, [appointments, monthlyAppointments, installers, globalGoals, activeTab, equipeViewType]);
 
     const displayAccounts = useMemo(() => {
         return accounts.filter(acc => selectedRegion === 'all' || acc.type === 'banco' || acc.region_id === selectedRegion);
@@ -1394,7 +1431,7 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<motion.div key={i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços • Regional {rep.region_id || 'N/A'}</p><div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></motion.div>))}</motion.div>
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<motion.div key={i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços / Meta {rep.goal > 0 ? rep.goal : 'N/A'} • Regional {rep.region_id || 'N/A'}</p>{rep.goalReached && <div className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded w-fit mb-3 flex items-center gap-1">🏆 Meta Atingida! {rep.bonusAmount > 0 ? `(+R$ ${rep.bonusAmount.toFixed(2)})` : ''}</div>}<div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></motion.div>))}</motion.div>
                                 </motion.div>
                             )}
 
@@ -1417,7 +1454,7 @@ export default function AdminPage() {
                                             if (invSortOrder === 'qty_desc') return b.quantity - a.quantity;
                                             if (invSortOrder === 'qty_asc') return a.quantity - b.quantity;
                                             return a.name.localeCompare(b.name);
-                                        }).map((item, i) => { const isReporEstoque = item.quantity <= item.min_threshold && item.min_threshold >= 0; const isNaoDisponivel = item.quantity <= 0 && item.min_threshold < 0; return (<motion.div key={item.id} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{isReporEstoque && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div><h4 className="font-bold text-slate-800 text-lg group-hover:text-blue-700 transition-colors">{item.name}</h4><div className="mt-1 flex flex-wrap gap-2"><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${(isReporEstoque || isNaoDisponivel) ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isReporEstoque ? 'Repor Estoque' : isNaoDisponivel ? 'Não Disponível' : 'Disponível'}</span>{selectedRegion === 'all' && <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{regions.find(r => r.slug === item.region_id)?.name || item.region_id || 'Matriz'}</span>}</div></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-end gap-2"><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Atual</label><input className="w-14 p-1.5 border border-blue-200 bg-blue-50 rounded text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /></div><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Mín</label><input className="w-14 p-1.5 border border-slate-200 bg-slate-50 rounded text-center font-bold text-slate-700 outline-none" type="number" value={editInvForm.min_threshold} onChange={e => setEditInvForm({ ...editInvForm, min_threshold: e.target.value })} /></div><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></motion.div>); })}
+                                        }).map((item, i) => { const isReporEstoque = item.quantity <= item.min_threshold && item.min_threshold >= 0; const isNaoDisponivel = item.quantity <= 0 && item.min_threshold < 0; return (<motion.div key={item.id} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-white p-5 rounded-2xl shadow-sm border border-gray-100 flex justify-between items-center relative overflow-hidden group hover:border-blue-200 transition-colors">{isReporEstoque && <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-red-500"></div>}<div>{isEditingNameInv === item.id ? (<div className="flex items-center gap-2"><input className="w-48 p-1.5 border border-blue-200 bg-blue-50 rounded font-bold text-slate-700 outline-none text-sm" autoFocus value={editInvForm.name || ''} onChange={e => setEditInvForm({ ...editInvForm, name: e.target.value })} /><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={16} /></button><button onClick={() => setIsEditingNameInv(null)} className="text-slate-400 hover:text-slate-600 p-1.5"><X size={16} /></button></div>) : (<h4 className="font-bold text-slate-800 text-lg transition-colors flex items-center gap-2 group/title">{item.name}<button onClick={() => { setIsEditingNameInv(item.id); setEditInvForm(item); }} className="text-slate-300 hover:text-blue-500 opacity-0 group-hover/title:opacity-100 transition-opacity"><Pencil size={14} /></button></h4>)}<div className="mt-1 flex flex-wrap gap-2"><span className={`text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md ${(isReporEstoque || isNaoDisponivel) ? 'bg-red-100 text-red-600' : 'bg-slate-100 text-slate-500'}`}>{isReporEstoque ? 'Repor Estoque' : isNaoDisponivel ? 'Não Disponível' : 'Disponível'}</span>{selectedRegion === 'all' && <span className="text-[10px] uppercase font-bold tracking-wider px-2 py-1 rounded-md bg-blue-50 text-blue-600 border border-blue-100">{regions.find(r => r.slug === item.region_id)?.name || item.region_id || 'Matriz'}</span>}</div></div><div className="text-right">{isEditingInv === item.id ? (<div className="flex items-end gap-2"><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Atual</label><input className="w-14 p-1.5 border border-blue-200 bg-blue-50 rounded text-center font-bold text-blue-700 outline-none" type="number" value={editInvForm.quantity} onChange={e => setEditInvForm({ ...editInvForm, quantity: e.target.value })} /></div><div className="flex flex-col"><label className="text-[9px] text-slate-500 uppercase font-bold text-center mb-0.5">Mín</label><input className="w-14 p-1.5 border border-slate-200 bg-slate-50 rounded text-center font-bold text-slate-700 outline-none" type="number" value={editInvForm.min_threshold} onChange={e => setEditInvForm({ ...editInvForm, min_threshold: e.target.value })} /></div><button onClick={() => handleUpdateInventory(item.id)} className="bg-emerald-100 text-emerald-700 p-1.5 rounded hover:bg-emerald-200"><Save size={18} /></button><button onClick={() => setIsEditingInv(null)} className="text-slate-400 hover:text-slate-600 p-1.5"><X size={18} /></button></div>) : (<div className="flex flex-col items-end gap-1"><span className="text-4xl font-bold text-slate-900 tracking-tight">{item.quantity}</span><button onClick={() => { setIsEditingInv(item.id); setEditInvForm(item); }} className="text-xs text-blue-600 hover:text-blue-800 font-bold">Ajustar</button></div>)}</div></motion.div>); })}
                                     </motion.div>
                                 </motion.div>
                             )}
@@ -1618,7 +1655,7 @@ export default function AdminPage() {
                         <p className="text-[10px] text-slate-500 bg-slate-100 p-2 rounded-lg leading-tight mt-2 border border-slate-200">Valores líquidos recalculam sozinhos. Alterar revestimento <strong className="text-emerald-600">agora atualiza o estoque</strong> automaticamente.</p>
                     </div>
                 </div>
-            )}{modalType === 'expense' && (<><div><label className="text-xs font-bold text-slate-500">Descrição</label><input className="w-full p-3 border rounded-xl" value={editingItem.description} onChange={e => setEditingItem({ ...editingItem, description: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Data</label><input type="date" className="w-full p-3 border rounded-xl" value={editingItem.date ? editingItem.date.slice(0, 10) : ''} onChange={e => setEditingItem({ ...editingItem, date: e.target.value + 'T12:00:00Z' })} /></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.amount} onChange={e => setEditingItem({ ...editingItem, amount: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Conta Origem</label><select className="w-full p-3 border rounded-xl" value={editingItem.account_id} onChange={e => setEditingItem({ ...editingItem, account_id: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div></>)}{modalType === 'installer' && (<><div><label className="text-xs font-bold text-slate-500">Nome Completo</label><input className="w-full p-3 border rounded-xl" value={editingItem.full_name || ''} onChange={e => setEditingItem({ ...editingItem, full_name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Padrão (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.commission_rate} onChange={e => setEditingItem({ ...editingItem, commission_rate: e.target.value })} /></div></>)}{modalType === 'account' && (<><div><label className="text-xs font-bold text-slate-500">Nome da Conta</label><input className="w-full p-3 border rounded-xl" value={editingItem.name || ''} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Tipo de Conta</label><select className="w-full p-3 border rounded-xl" value={editingItem.type || 'banco'} onChange={e => setEditingItem({ ...editingItem, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500">Região</label><select className="w-full p-3 border rounded-xl" value={editingItem.region_id || 'matriz'} onChange={e => setEditingItem({ ...editingItem, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" value={editingItem.initial_balance || 0} onChange={e => setEditingItem({ ...editingItem, initial_balance: e.target.value })} /></div></>)}</div><div className="flex gap-3 mt-6"><button onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button><button onClick={(e) => { e.currentTarget.disabled = true; e.currentTarget.innerText = 'Salvando...'; handleSaveEdit(); }} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 disabled:opacity-50">Salvar Alterações</button></div></div></div>)
+            )}{modalType === 'expense' && (<><div><label className="text-xs font-bold text-slate-500">Descrição</label><input className="w-full p-3 border rounded-xl" value={editingItem.description} onChange={e => setEditingItem({ ...editingItem, description: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Data</label><input type="date" className="w-full p-3 border rounded-xl" value={editingItem.date ? editingItem.date.slice(0, 10) : ''} onChange={e => setEditingItem({ ...editingItem, date: e.target.value + 'T12:00:00Z' })} /></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.amount} onChange={e => setEditingItem({ ...editingItem, amount: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Conta Origem</label><select className="w-full p-3 border rounded-xl" value={editingItem.account_id} onChange={e => setEditingItem({ ...editingItem, account_id: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div></>)}{modalType === 'installer' && (<><div><label className="text-xs font-bold text-slate-500">Nome Completo</label><input className="w-full p-3 border rounded-xl" value={editingItem.full_name || ''} onChange={e => setEditingItem({ ...editingItem, full_name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Padrão (R$)</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.commission_rate || ''} onChange={e => setEditingItem({ ...editingItem, commission_rate: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Comissão Extra (Por Serviço) se bater meta</label><input type="number" className="w-full p-3 border rounded-xl" value={editingItem.extra_commission_rate || 0} onChange={e => setEditingItem({ ...editingItem, extra_commission_rate: e.target.value })} /></div></>)}{modalType === 'account' && (<><div><label className="text-xs font-bold text-slate-500">Nome da Conta</label><input className="w-full p-3 border rounded-xl" value={editingItem.name || ''} onChange={e => setEditingItem({ ...editingItem, name: e.target.value })} /></div><div><label className="text-xs font-bold text-slate-500">Tipo de Conta</label><select className="w-full p-3 border rounded-xl" value={editingItem.type || 'banco'} onChange={e => setEditingItem({ ...editingItem, type: e.target.value })}><option value="banco">Banco (Cartão/PIX)</option><option value="carteira">Caixa Físico</option></select></div><div><label className="text-xs font-bold text-slate-500">Região</label><select className="w-full p-3 border rounded-xl" value={editingItem.region_id || 'matriz'} onChange={e => setEditingItem({ ...editingItem, region_id: e.target.value })}><option value="matriz">Global / Matriz</option>{regions.filter(r => r.slug !== 'matriz').map(r => <option key={r.slug} value={r.slug}>{r.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Saldo Inicial</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" value={editingItem.initial_balance || 0} onChange={e => setEditingItem({ ...editingItem, initial_balance: e.target.value })} /></div></>)}</div><div className="flex gap-3 mt-6"><button onClick={() => setShowEditModal(false)} className="flex-1 py-3 text-slate-500 font-bold hover:bg-slate-100 rounded-xl">Cancelar</button><button onClick={(e) => { e.currentTarget.disabled = true; e.currentTarget.innerText = 'Salvando...'; handleSaveEdit(); }} className="flex-1 py-3 bg-blue-600 text-white font-bold rounded-xl hover:bg-blue-500 disabled:opacity-50">Salvar Alterações</button></div></div></div>)
             }
             {showTransferModal && (<div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"><div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-2xl animate-in zoom-in-95"><h3 className="text-lg font-bold mb-4 text-slate-900 flex items-center gap-2"><ArrowRightLeft size={20} /> Transferência</h3><form onSubmit={handleTransfer} className="space-y-4"><div><label className="text-xs font-bold text-slate-500">De (Origem)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, from: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name} (R$ {Number(a.balance).toFixed(2)})</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Para (Destino)</label><select className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, to: e.target.value })}><option value="">Selecione...</option>{accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}</select></div><div><label className="text-xs font-bold text-slate-500">Valor (R$)</label><input type="number" step="0.01" className="w-full p-3 border rounded-xl" required onChange={e => setTransferData({ ...transferData, amount: e.target.value })} /></div><button className="w-full py-3 bg-green-600 text-white font-bold rounded-xl hover:bg-green-500 mt-2">Confirmar</button><button type="button" onClick={() => setShowTransferModal(false)} className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl">Cancelar</button></form></div></div>)}
             {selectedTransaction && (
