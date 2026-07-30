@@ -18,6 +18,18 @@ import {
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884d8', '#82ca9d', '#ef4444', '#3b82f6'];
 
+const CITIES_BY_REGION = {
+    'setelagoas': [
+        'Pedro Leopoldo', 'Sete Lagoas', 'Lagoa Santa', 'Paraopeba / Caetanópolis', 'Matozinhos', 'Ribeirão das Neves', 'Vespasiano', 'Curvelo'
+    ],
+    'divinopolis': [
+        'Divinópolis', 'Itaúna', 'Formiga', 'Pará de Minas', 'Santo Antônio do Monte (Samonte)', 'Cláudio', 'Nova Serrana', 'Bom Despacho', 'Lagoa da Prata', 'Pitangui', 'Carmo do Cajuru', 'Oliveira', 'Itapecerica'
+    ],
+    'belo-horizonte': [
+        'Belo Horizonte'
+    ]
+};
+
 export default function AdminPage() {
     const router = useRouter();
     const supabase = createBrowserClient(
@@ -355,7 +367,7 @@ export default function AdminPage() {
             }
         }
 
-        const fieldsToDelete = ['expense_categories', 'label', 'val', 'desc', 'email', 'account_name', 'account_region', 'is_primary', '_new_account_id', '_new_account_id_2'];
+        const fieldsToDelete = ['expense_categories', 'label', 'val', 'net_val', 'city', 'desc', 'email', 'account_name', 'account_region', 'is_primary', '_new_account_id', '_new_account_id_2'];
         if (modalType !== 'account') fieldsToDelete.push('type');
         if (table !== 'expenses') fieldsToDelete.push('date');
         if (payload.region_id === 'matriz') payload.region_id = null;
@@ -1539,6 +1551,16 @@ export default function AdminPage() {
                         )}
                         <div><label className="text-[10px] font-bold uppercase text-slate-500">Veículo</label><input className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.vehicle_model || ''} onChange={e => setEditingItem({ ...editingItem, vehicle_model: e.target.value })} /></div>
                         <div><label className="text-[10px] font-bold uppercase text-slate-500">Cliente</label><input className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.customer_name || ''} onChange={e => setEditingItem({ ...editingItem, customer_name: e.target.value })} /></div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase text-slate-500">Cidade (Atendimento)</label>
+                            <select className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.calendar_name || ''} onChange={e => setEditingItem({ ...editingItem, calendar_name: e.target.value })}>
+                                <option value="">Não informada</option>
+                                {(editingItem.region_id && CITIES_BY_REGION[editingItem.region_id] 
+                                    ? CITIES_BY_REGION[editingItem.region_id] 
+                                    : Object.values(CITIES_BY_REGION).flat()
+                                ).sort().map(city => <option key={city} value={city}>{city}</option>)}
+                            </select>
+                        </div>
                         <div>
                             <label className="text-[10px] font-bold uppercase text-slate-500">Revestimento Utilizado</label>
                             <select className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" value={editingItem.material_used_id || ''} onChange={e => setEditingItem({ ...editingItem, material_used_id: e.target.value })}>

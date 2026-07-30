@@ -15,7 +15,8 @@ export async function POST(request) {
       material_name,
       installer_name,
       calendar_name,
-      photo_url 
+      photo_url,
+      appointment_time
     } = body;
 
     const botToken = process.env.TELEGRAM_BOT_TOKEN;
@@ -35,8 +36,9 @@ export async function POST(request) {
       paymentText += ` + ${payment_method_2 ? payment_method_2.toUpperCase() : 'N/I'} (${formattedAmount2})`;
     }
 
+    const timeDisplay = appointment_time ? ` (${appointment_time})` : '';
     const caption = `🟢 <b>NOVO SERVIÇO CONCLUÍDO!</b>\n\n` +
-      `👤 <b>Cliente:</b> ${customer_name || 'Não informado'}\n` +
+      `👤 <b>Cliente:</b> ${customer_name || 'Não informado'}${timeDisplay}\n` +
       `🚗 <b>Veículo:</b> ${vehicle_model || 'Não informado'} ${vehicle_year ? `(${vehicle_year})` : ''}\n` +
       `📍 <b>Cidade/Agenda:</b> ${calendar_name || 'N/A'}\n` +
       `🛠️ <b>Material:</b> ${material_name || 'Instalação'}\n` +

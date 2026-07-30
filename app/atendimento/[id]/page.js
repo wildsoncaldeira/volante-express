@@ -8,6 +8,18 @@ import { toast } from 'react-hot-toast';
 import { motion } from 'framer-motion';
 import imageCompression from 'browser-image-compression';
 
+const CITIES_BY_REGION = {
+    'setelagoas': [
+        'Pedro Leopoldo', 'Sete Lagoas', 'Lagoa Santa', 'Paraopeba / Caetanópolis', 'Matozinhos', 'Ribeirão das Neves', 'Vespasiano', 'Curvelo'
+    ],
+    'divinopolis': [
+        'Divinópolis', 'Itaúna', 'Formiga', 'Pará de Minas', 'Santo Antônio do Monte (Samonte)', 'Cláudio', 'Nova Serrana', 'Bom Despacho', 'Lagoa da Prata', 'Pitangui', 'Carmo do Cajuru', 'Oliveira', 'Itapecerica'
+    ],
+    'belo-horizonte': [
+        'Belo Horizonte'
+    ]
+};
+
 export default function AtendimentoPage({ params }) {
   const resolvedParams = use(params);
   const id = resolvedParams.id;
@@ -43,6 +55,7 @@ export default function AtendimentoPage({ params }) {
   // NOVO: Estado para armazenar comissão e nome do instalador
   const [myCommission, setMyCommission] = useState(0);
   const [installerName, setInstallerName] = useState('');
+  const [selectedCity, setSelectedCity] = useState('');
 
   useEffect(() => { loadData(); }, [id]);
 
@@ -64,6 +77,7 @@ export default function AtendimentoPage({ params }) {
       const { data: appData, error: appError } = await supabase.from('appointments').select('*').eq('id', id).single();
       if (appError) throw appError;
       setAppointment(appData);
+      setSelectedCity(appData.calendar_name || '');
 
       if (appData.region_id) {
         // 2. Busca Estoque
@@ -88,8 +102,8 @@ export default function AtendimentoPage({ params }) {
   };
 
   const handleFinish = async () => {
-    if (!selectedMaterial || !paymentMethod || !photoFile || !amount) {
-      toast.error('Preencha todos os campos obrigatórios!');
+    if (!selectedMaterial || !paymentMethod || !photoFile || !amount || (appointment.customer_name === 'Cliente Avulso' && !selectedCity)) {
+      toast.error('Preencha todos os campos obrigatórios, incluindo a cidade!');
       return;
     }
 
@@ -189,7 +203,8 @@ export default function AtendimentoPage({ params }) {
         commission_amount: myCommission, // <--- SALVA AQUI OS R$ 25,00
         photo_url: publicUrl,
         completed_at: new Date().toISOString(),
-        is_split_payment: isSplitPayment
+        is_split_payment: isSplitPayment,
+        calendar_name: selectedCity
       };
 
       if (isSplitPayment) {
@@ -229,9 +244,10 @@ export default function AtendimentoPage({ params }) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             customer_name: appointment.customer_name,
+            appointment_time: appointment.appointment_at ? new Date(appointment.appointment_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: 'America/Sao_Paulo' }) : '',
             vehicle_model: appointment.vehicle_model,
             vehicle_year: appointment.vehicle_year,
-            calendar_name: appointment.calendar_name,
+            calendar_name: selectedCity,
             gross_amount: grossVal,
             payment_method: paymentMethod,
             is_split_payment: isSplitPayment,
@@ -283,6 +299,18 @@ export default function AtendimentoPage({ params }) {
           <p className="text-xs text-blue-400 font-bold uppercase mb-1">Veículo</p>
           <h2 className="font-bold text-white text-xl">{appointment.vehicle_model}</h2>
           <p className="text-slate-500 text-sm mt-1">{appointment.customer_name}</p>
+          {appointment.customer_name === 'Cliente Avulso' && (
+             <div className="mt-4 pt-4 border-t border-slate-800">
+               <label className="text-[10px] font-bold uppercase text-slate-500 mb-2 block">Cidade (Atendimento)</label>
+               <select className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none" value={selectedCity} onChange={e => setSelectedCity(e.target.value)}>
+                   <option value="">Selecione a cidade...</option>
+                   {(appointment.region_id && CITIES_BY_REGION[appointment.region_id] 
+                        ? CITIES_BY_REGION[appointment.region_id] 
+                        : Object.values(CITIES_BY_REGION).flat()
+                   ).sort().map(city => <option key={city} value={city}>{city}</option>)}
+               </select>
+             </div>
+          )}
         </div>
 
         <div className="space-y-2">
