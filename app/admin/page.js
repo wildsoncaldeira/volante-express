@@ -1,13 +1,14 @@
 'use client';
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
+import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import {
     TrendingDown, Filter, Settings, Trash2, Banknote, Calendar,
     Star, Package, Plus, Save, Eye, X, PieChart as PieIcon,
     BarChart3, Users, LayoutDashboard, LogOut, Wallet,
     ArrowRightLeft, Pencil, TrendingUp, Smartphone, Trophy, ListTodo, Search, ChevronDown, ChevronLeft, ChevronRight,
-    Maximize, Download, Target
+    Maximize, Download, Target, MessageSquare, ThumbsUp, ThumbsDown, Send, BotMessageSquare
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -36,6 +37,10 @@ export default function AdminPage() {
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     );
+    const botSupabase = useMemo(() => createClient(
+        'https://sgijvaejapabhivkhwwl.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnaWp2YWVqYXBhYmhpdmtod3dsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDg5MDksImV4cCI6MjEwMTUyNDkwOX0.juKcQRgUBcJuZaYaM9wao0nK-QqukvKM2GObf09meTs'
+    ), []);
 
     const [activeTab, setActiveTab] = useState('dashboard');
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -121,26 +126,18 @@ export default function AdminPage() {
     const [equipeViewType, setEquipeViewType] = useState('mensal'); // 'semanal' ou 'mensal'
     const [equipeCurrentWeekDate, setEquipeCurrentWeekDate] = useState(new Date());
 
-    useEffect(() => { 
-        const checkAuth = async () => {
-            const { data: { session } } = await supabase.auth.getSession();
-            if (!session) {
-                router.push('/login');
-            } else {
-                loadRegions();
-            }
-        };
-        checkAuth();
-    }, [router, supabase.auth]);
-    useEffect(() => { fetchData(); }, [selectedRegion, activeTab, selectedMonth, atmSearchAllMonths, equipeViewType, equipeCurrentWeekDate]);
+    // Bot States
+    const [activeBotTab, setActiveBotTab] = useState('script');
+    const [botPhotoCaption, setBotPhotoCaption] = useState('');
+    const [botScarcityText, setBotScarcityText] = useState('');
+    const [botInfoText, setBotInfoText] = useState('');
+    const [botClosingText, setBotClosingText] = useState('');
+    const [botFaqs, setBotFaqs] = useState([]);
+    const [botRegionais, setBotRegionais] = useState([]);
+    const [botConversations, setBotConversations] = useState([]);
+    const [chatHistory, setChatHistory] = useState([]);
+    const [botTestForm, setBotTestForm] = useState({ city: 'Belo Horizonte', attendanceDate: 'Sexta-feira', message: '', contactName: 'Teste' });
 
-
-
-    useEffect(() => {
-        if (activeTab === 'configuracoes' && regions.length > 0) {
-            fetchGoalsForMonth(goalsMonth);
-        }
-    }, [activeTab, goalsMonth, regions]);
 
     async function fetchGoalsForMonth(m) {
         const { data: currentGoals } = await supabase
@@ -305,7 +302,188 @@ export default function AdminPage() {
         setLoading(false);
     }
 
+    async function fetchBotData() {
+        if (activeBotTab === 'script') {
+            const { data } = await botSupabase.from('bot_config').select('*');
+            if (data) {
+                setBotPhotoCaption(data.find(d => d.key === 'photo_caption')?.value || '');
+                setBotScarcityText(data.find(d => d.key === 'scarcity_text')?.value || '');
+                setBotInfoText(data.find(d => d.key === 'info_text')?.value || '');
+                setBotClosingText(data.find(d => d.key === 'closing_text')?.value || '');
+            }
+        } else if (activeBotTab === 'faq') {
+            const { data } = await botSupabase.from('bot_faqs').select('*').order('created_at', { ascending: true });
+            setBotFaqs(data || []);
+        } else if (activeBotTab === 'regionais') {
+            const { data } = await botSupabase.from('bot_regionais').select('*').order('region', { ascending: true });
+            setBotRegionais(data || []);
+        } else if (activeBotTab === 'conversas') {
+            const { data } = await botSupabase.from('bot_conversations').select('*').order('created_at', { ascending: false }).limit(200);
+            const grouped = {};
+            (data || []).forEach(msg => {
+                if (!grouped[msg.contact_id]) grouped[msg.contact_id] = [];
+                grouped[msg.contact_id].push(msg);
+            });
+            const groupedArr = Object.entries(grouped).map(([id, msgs]) => ({
+                contact_id: id,
+                messages: msgs.reverse(),
+                lastMessageAt: msgs[msgs.length - 1]?.created_at
+            })).sort((a, b) => new Date(b.lastMessageAt) - new Date(a.lastMessageAt));
+            setBotConversations(groupedArr);
+        }
+    }
+
+    useEffect(() => { 
+        const checkAuth = async () => {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) {
+                router.push('/login');
+            } else {
+                loadRegions();
+            }
+        };
+        checkAuth();
+    }, [router, supabase.auth]);
+
+    useEffect(() => { fetchData(); }, [selectedRegion, activeTab, selectedMonth, atmSearchAllMonths, equipeViewType, equipeCurrentWeekDate]);
+
+    useEffect(() => {
+        if (activeTab === 'configuracoes' && regions.length > 0) {
+            fetchGoalsForMonth(goalsMonth);
+        }
+    }, [activeTab, goalsMonth, regions]);
+
+    useEffect(() => {
+        if (activeTab === 'bot') {
+            fetchBotData();
+        }
+    }, [activeTab, activeBotTab, botSupabase]);
+
+    // Bot Handlers
+    async function handleSaveBotScript() {
+        const payload = [
+            { key: 'photo_caption', value: botPhotoCaption },
+            { key: 'scarcity_text', value: botScarcityText },
+            { key: 'info_text', value: botInfoText },
+            { key: 'closing_text', value: botClosingText }
+        ];
+        const { error } = await botSupabase.from('bot_config').upsert(payload, { onConflict: 'key' });
+        if (error) toast.error('Erro ao salvar script: ' + error.message);
+        else toast.success('Configurações do bot salvas!');
+    }
+
+    async function handleAddFaq(e) {
+        e.preventDefault();
+        const q = e.target.question.value;
+        const a = e.target.answer.value;
+        if (!q || !a) return toast.error('Preencha os dois campos');
+        const { error } = await botSupabase.from('bot_faqs').insert([{ question: q, answer: a }]);
+        if (error) toast.error('Erro ao adicionar FAQ: ' + error.message);
+        else { toast.success('FAQ adicionado!'); e.target.reset(); fetchBotData(); }
+    }
+
+    async function handleDeleteFaq(id) {
+        if (!confirm('Excluir pergunta frequente?')) return;
+        const { error } = await botSupabase.from('bot_faqs').delete().eq('id', id);
+        if (error) toast.error('Erro ao excluir FAQ: ' + error.message);
+        if (!error) fetchBotData();
+    }
+
+    async function handleAddRegional(e) {
+        e.preventDefault();
+        const city = e.target.city.value;
+        const date = e.target.date.value;
+        const region = e.target.region.value;
+        if (!city || !date || !region) return toast.error('Preencha todos os campos');
+        const { error } = await botSupabase.from('bot_regionais').insert([{ city, attendance_date: date, region }]);
+        if (error) toast.error('Erro ao adicionar Regional: ' + error.message);
+        else { toast.success('Regional adicionada!'); e.target.reset(); fetchBotData(); }
+    }
+
+    async function handleDeleteRegional(id) {
+        if (!confirm('Excluir cidade?')) return;
+        const { error } = await botSupabase.from('bot_regionais').delete().eq('id', id);
+        if (error) toast.error('Erro ao excluir Regional: ' + error.message);
+        if (!error) fetchBotData();
+    }
+
+    async function handleTestChat(e) {
+        e.preventDefault();
+        if (!botTestForm.message) return;
+        const userMsg = { role: 'user', content: botTestForm.message };
+        const currentHistory = [...chatHistory, userMsg];
+        setChatHistory(currentHistory);
+        setBotTestForm(prev => ({ ...prev, message: '' }));
+        try {
+            const res = await fetch('/api/bot-proxy', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    message: userMsg.content,
+                    contactName: botTestForm.contactName,
+                    city: botTestForm.city,
+                    attendanceDate: botTestForm.attendanceDate,
+                    history: currentHistory.slice(0, -1).map(h => ({ role: h.role, content: h.content }))
+                })
+            });
+            const data = await res.json();
+            if (data.action) {
+                if (data.action.type === 'reply_with_photos') {
+                    setChatHistory(prev => [...prev, { role: 'assistant', content: data.action.text || '' }]);
+                    if (data.action.photos && data.action.photos.length > 0) {
+                        setChatHistory(prev => [...prev, { role: 'assistant', content: '[fotos enviadas]', photos: data.action.photos }]);
+                    }
+                    if (data.action.scarcityText) {
+                        setTimeout(() => {
+                            setChatHistory(prev => [...prev, { role: 'assistant', content: data.action.scarcityText }]);
+                        }, 2000);
+                    }
+                    if (data.action.infoText) {
+                        setTimeout(() => {
+                            setChatHistory(prev => [...prev, { role: 'assistant', content: data.action.infoText }]);
+                        }, 3000);
+                    }
+                } else {
+                    let botText = data.action.text || '';
+                    if (data.action.type === 'handoff') botText = `[ESCALOU] ${data.action.reason} - ${data.action.summary}`;
+                    const botMsg = { role: 'assistant', content: botText };
+                    setChatHistory(prev => [...prev, botMsg]);
+                    if (data.action.photos && data.action.photos.length > 0) {
+                         setChatHistory(prev => [...prev, { role: 'assistant', content: '[fotos enviadas]', photos: data.action.photos }]);
+                    }
+                }
+            } else if (data.error) {
+                toast.error('Erro do Bot: ' + data.error);
+            }
+        } catch (err) {
+            toast.error('Erro ao conectar ao proxy do bot: ' + err.message);
+        }
+    }
+
+    async function handleRateConversation(msgId, rating) {
+        const { error } = await botSupabase.from('bot_conversations').update({ rating }).eq('id', msgId);
+        if (error) toast.error('Erro ao avaliar');
+        else fetchBotData();
+    }
+
     // --- CRUD ---
+    async function handleApproveExpense(expenseId, amount, newDesc, accountId) {
+        if (!confirm('Aprovar esta saída e debitar do caixa?')) return;
+        const { error } = await supabase.from('expenses').update({
+            amount: amount,
+            description: newDesc
+        }).eq('id', expenseId);
+
+        if (!error) {
+            const acc = accounts.find(a => a.id === accountId);
+            if (acc) await supabase.from('accounts').update({ balance: (acc.balance || 0) - amount }).eq('id', accountId);
+            fetchData();
+            toast.success('Despesa aprovada!');
+        } else {
+            toast.error('Erro ao aprovar: ' + error.message);
+        }
+    }
+
     async function handleDelete(table, id) {
         if (!confirm('Tem certeza absoluta? Essa ação ajustará o saldo automaticamente.')) return;
         const { error } = await supabase.from(table).delete().eq('id', id);
@@ -744,9 +922,9 @@ export default function AdminPage() {
     // --- COMPONENTE BOTTOM NAV (QUE FALTAVA!) ---
     const BottomNav = () => (
         <div className="md:hidden fixed bottom-0 left-0 right-0 bg-slate-900 border-t border-slate-800 z-50 px-6 py-2 flex justify-between items-center safe-area-bottom overflow-x-auto">
-            {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'configuracoes'].map(tab => (
+            {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'bot', 'configuracoes'].map(tab => (
                 <button key={tab} onClick={() => { if (tab === 'meta') router.push('/admin/meta'); else setActiveTab(tab); }} className={`flex flex-col items-center gap-1 p-2 flex-shrink-0 ${activeTab === tab ? 'text-blue-500' : 'text-slate-500'}`}>
-                    {tab === 'dashboard' ? <LayoutDashboard size={22} /> : tab === 'atendimentos' ? <ListTodo size={22} /> : tab === 'financeiro' ? <Banknote size={22} /> : tab === 'equipe' ? <Users size={22} /> : tab === 'estoque' ? <Package size={22} /> : tab === 'meta' ? <Target size={22} /> : <Settings size={22} />}
+                    {tab === 'dashboard' ? <LayoutDashboard size={22} /> : tab === 'atendimentos' ? <ListTodo size={22} /> : tab === 'financeiro' ? <Banknote size={22} /> : tab === 'equipe' ? <Users size={22} /> : tab === 'estoque' ? <Package size={22} /> : tab === 'meta' ? <Target size={22} /> : tab === 'bot' ? <MessageSquare size={22} /> : <Settings size={22} />}
                 </button>
             ))}
         </div>
@@ -763,7 +941,7 @@ export default function AdminPage() {
                     )}
                 </div>
                 <nav className="flex-1 p-4 space-y-2 overflow-y-auto overflow-x-hidden">
-                    {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'configuracoes'].map(tab => (
+                    {['dashboard', 'atendimentos', 'financeiro', 'equipe', 'estoque', 'meta', 'bot', 'configuracoes'].map(tab => (
                         <button key={tab} title={tab} onClick={() => { if (tab === 'meta') router.push('/admin/meta'); else setActiveTab(tab); }} className={`w-full flex items-center ${isSidebarCollapsed ? 'justify-center px-2' : 'gap-3 px-4'} py-3 rounded-xl transition-all font-medium capitalize ${activeTab === tab ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/50' : 'hover:bg-slate-800 hover:text-white'}`}>
                             {tab === 'dashboard' && <LayoutDashboard size={20} className="shrink-0" />}
                             {tab === 'atendimentos' && <ListTodo size={20} className="shrink-0" />}
@@ -771,9 +949,10 @@ export default function AdminPage() {
                             {tab === 'equipe' && <Users size={20} className="shrink-0" />}
                             {tab === 'estoque' && <Package size={20} className="shrink-0" />}
                             {tab === 'meta' && <Target size={20} className="shrink-0" />}
+                            {tab === 'bot' && <MessageSquare size={20} className="shrink-0" />}
                             {tab === 'configuracoes' && <Settings size={20} className="shrink-0" />}
                             {!isSidebarCollapsed && (
-                                <span className="truncate">{tab === 'configuracoes' ? 'Configurações' : tab === 'meta' ? 'Meta Ads' : tab}</span>
+                                <span className="truncate">{tab === 'configuracoes' ? 'Configurações' : tab === 'meta' ? 'Meta Ads' : tab === 'bot' ? 'Bot' : tab}</span>
                             )}
                         </button>
                     ))}
@@ -1329,6 +1508,12 @@ export default function AdminPage() {
                                                             <td className="p-4 text-center">
                                                                 <div className="flex justify-center gap-2">
                                                                     <button onClick={() => openEditModal(t.type === 'in' ? 'appointment' : 'expense', t)} className="p-1.5 text-blue-400 hover:bg-blue-50 rounded"><Pencil size={16} /></button>
+                                                                    {t.type === 'out' && typeof t.label === 'string' && t.label.startsWith('[PENDENTE:') && (
+                                                                        <button onClick={() => {
+                                                                            const match = t.label.match(/\[PENDENTE: R\$ ([\d.]+)\] (.*)/);
+                                                                            if (match) handleApproveExpense(t.id, parseFloat(match[1]), match[2], t.account_id);
+                                                                        }} className="p-1.5 text-orange-500 hover:bg-orange-50 rounded font-bold text-[10px] mt-1">APROVAR</button>
+                                                                    )}
                                                                     {t.is_primary !== false && (
                                                                         <button onClick={() => handleDelete(t.type === 'in' ? 'appointments' : 'expenses', t.id)} className="p-1.5 text-red-400 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
                                                                     )}
@@ -1380,6 +1565,12 @@ export default function AdminPage() {
                                                             </div>
                                                             <div className="flex shrink-0 gap-1 items-center">
                                                                 <button onClick={() => openEditModal(t.type === 'in' ? 'appointment' : 'expense', t)} className="p-2 text-blue-500 bg-white hover:bg-blue-50 rounded-lg border border-slate-200 shadow-sm"><Pencil size={14}/></button>
+                                                                {t.type === 'out' && typeof t.label === 'string' && t.label.startsWith('[PENDENTE:') && (
+                                                                    <button onClick={() => {
+                                                                        const match = t.label.match(/\[PENDENTE: R\$ ([\d.]+)\] (.*)/);
+                                                                        if (match) handleApproveExpense(t.id, parseFloat(match[1]), match[2], t.account_id);
+                                                                    }} className="p-2 text-orange-500 bg-white hover:bg-orange-50 rounded-lg border border-slate-200 shadow-sm font-bold text-[10px]">APROVAR</button>
+                                                                )}
                                                                 {t.is_primary !== false && (
                                                                     <button onClick={() => handleDelete(t.type === 'in' ? 'appointments' : 'expenses', t.id)} className="p-2 text-red-500 bg-white hover:bg-red-50 rounded-lg border border-slate-200 shadow-sm"><Trash2 size={14}/></button>
                                                                 )}
@@ -1571,6 +1762,202 @@ export default function AdminPage() {
                                 </motion.div>
                             )}
                         </AnimatePresence>
+                            {activeTab === 'bot' && (
+                                <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-slate-800">Bot AI</h2>
+                                            <p className="text-sm text-slate-500">Gerencie a IA de atendimento</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Sub-abas */}
+                                    <div className="flex overflow-x-auto gap-2 bg-slate-100 p-1 rounded-xl">
+                                        {['script', 'faq', 'regionais', 'chat', 'conversas'].map(sub => (
+                                            <button key={sub} onClick={() => setActiveBotTab(sub)} className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize whitespace-nowrap transition-colors ${activeBotTab === sub ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
+                                                {sub}
+                                            </button>
+                                        ))}
+                                    </div>
+
+                                    {activeBotTab === 'script' && (
+                                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 space-y-6">
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-bold text-slate-700">Texto das Fotos (photo_caption)</label>
+                                                <p className="text-xs text-slate-500">Enviado logo após as fotos do catálogo.</p>
+                                                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botPhotoCaption} onChange={e => setBotPhotoCaption(e.target.value)} />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-bold text-slate-700">Texto de Escassez (scarcity_text)</label>
+                                                <p className="text-xs text-slate-500">Dica: Use as variáveis {'{city}'} e {'{date}'}.</p>
+                                                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botScarcityText} onChange={e => setBotScarcityText(e.target.value)} />
+                                                <div className="bg-blue-50 p-3 rounded-lg text-sm text-blue-800 border border-blue-100 mt-2">
+                                                    <strong>Preview:</strong> {botScarcityText.replace(/\{city\}/g, 'Belo Horizonte').replace(/\{date\}/g, 'Sexta-feira')}
+                                                </div>
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-bold text-slate-700">Informações do Serviço (info_text)</label>
+                                                <p className="text-xs text-slate-500">Bloco de informações sobre como funciona o serviço, duração, etc.</p>
+                                                <textarea className="w-full h-32 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botInfoText} onChange={e => setBotInfoText(e.target.value)} />
+                                            </div>
+
+                                            <div className="space-y-2">
+                                                <label className="block text-sm font-bold text-slate-700">Texto de Fechamento (closing_text)</label>
+                                                <p className="text-xs text-slate-500">Ex: Fica melhor agendar de manhã ou de tarde?</p>
+                                                <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botClosingText} onChange={e => setBotClosingText(e.target.value)} />
+                                            </div>
+
+                                            <button onClick={handleSaveBotScript} className="bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center gap-2">
+                                                <Save size={18} /> Salvar Configurações
+                                            </button>
+                                        </div>
+                                    )}
+
+                                    {activeBotTab === 'faq' && (
+                                        <div className="space-y-6">
+                                            <form onSubmit={handleAddFaq} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row gap-4">
+                                                <input type="text" name="question" placeholder="Pergunta (Ex: Qual o valor?)" className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
+                                                <input type="text" name="answer" placeholder="Resposta" className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
+                                                <button type="submit" className="bg-blue-600 text-white font-bold py-3 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors">Adicionar FAQ</button>
+                                            </form>
+                                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 divide-y divide-gray-100">
+                                                {botFaqs.map(faq => (
+                                                    <div key={faq.id} className="p-4 flex items-start justify-between gap-4">
+                                                        <div>
+                                                            <p className="font-bold text-slate-800">{faq.question}</p>
+                                                            <p className="text-sm text-slate-600 mt-1">{faq.answer}</p>
+                                                        </div>
+                                                        <button onClick={() => handleDeleteFaq(faq.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={18} /></button>
+                                                    </div>
+                                                ))}
+                                                {botFaqs.length === 0 && <div className="p-8 text-center text-slate-500">Nenhuma FAQ cadastrada.</div>}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeBotTab === 'regionais' && (
+                                        <div className="space-y-6">
+                                            <form onSubmit={handleAddRegional} className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 flex flex-col md:flex-row gap-4">
+                                                <input type="text" name="region" placeholder="Região (ex: divinopolis)" className="w-full md:w-1/4 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
+                                                <input type="text" name="city" placeholder="Cidade (ex: Itaúna)" className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
+                                                <input type="text" name="date" placeholder="Data (ex: Sábado, 12/08)" className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" />
+                                                <button type="submit" className="bg-blue-600 text-white font-bold py-3 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors">Adicionar</button>
+                                            </form>
+                                            <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+                                                <table className="w-full text-left border-collapse">
+                                                    <thead>
+                                                        <tr className="bg-slate-50 border-b border-gray-100 text-slate-500 text-xs uppercase tracking-wider">
+                                                            <th className="p-4 font-bold">Região</th>
+                                                            <th className="p-4 font-bold">Cidade</th>
+                                                            <th className="p-4 font-bold">Data Atendimento</th>
+                                                            <th className="p-4 font-bold w-16 text-center">Ações</th>
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody className="divide-y divide-gray-100">
+                                                        {botRegionais.map(reg => (
+                                                            <tr key={reg.id} className="hover:bg-slate-50">
+                                                                <td className="p-4 font-semibold text-slate-700 capitalize">{reg.region}</td>
+                                                                <td className="p-4 text-sm text-slate-700">{reg.city}</td>
+                                                                <td className="p-4 text-sm text-slate-600">{reg.attendance_date}</td>
+                                                                <td className="p-4 text-center">
+                                                                    <button onClick={() => handleDeleteRegional(reg.id)} className="p-1 text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>
+                                                                </td>
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeBotTab === 'chat' && (
+                                        <div className="flex flex-col md:flex-row gap-6">
+                                            <div className="w-full md:w-1/3 bg-white p-6 rounded-2xl shadow-sm border border-gray-100 space-y-4">
+                                                <h3 className="font-bold text-slate-800">Parâmetros do Teste</h3>
+                                                <input type="text" placeholder="Nome do Cliente" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" value={botTestForm.contactName} onChange={e => setBotTestForm({...botTestForm, contactName: e.target.value})} />
+                                                <input type="text" placeholder="Cidade" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" value={botTestForm.city} onChange={e => setBotTestForm({...botTestForm, city: e.target.value})} />
+                                                <input type="text" placeholder="Data Atendimento" className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm" value={botTestForm.attendanceDate} onChange={e => setBotTestForm({...botTestForm, attendanceDate: e.target.value})} />
+                                                <button onClick={() => setChatHistory([])} className="w-full py-2 bg-slate-100 text-slate-600 rounded-xl text-sm font-bold">Limpar Chat</button>
+                                            </div>
+                                            <div className="flex-1 bg-white rounded-2xl shadow-sm border border-gray-100 flex flex-col h-[600px]">
+                                                <div className="p-4 border-b border-gray-100 bg-slate-50 rounded-t-2xl flex items-center gap-3">
+                                                    <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center text-white"><BotMessageSquare size={20} /></div>
+                                                    <div>
+                                                        <p className="font-bold text-slate-800">Bot Teste</p>
+                                                        <p className="text-xs text-green-600 font-medium">Online</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-slate-50/50">
+                                                    {chatHistory.map((msg, i) => (
+                                                        <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                                                            <div className={`max-w-[80%] p-3 rounded-2xl text-sm ${msg.role === 'user' ? 'bg-blue-600 text-white rounded-br-none' : 'bg-white border border-gray-200 text-slate-700 rounded-bl-none shadow-sm'}`}>
+                                                                {msg.content}
+                                                                {msg.photos && msg.photos.length > 0 && (
+                                                                    <div className="flex flex-col gap-2 mt-2">
+                                                                        {msg.photos.map((p, idx) => (
+                                                                            <img key={idx} src={p} alt="Foto do bot" className="w-full h-auto rounded-lg" />
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                    {chatHistory.length === 0 && <div className="text-center text-slate-400 mt-10 text-sm">Envie uma mensagem para começar</div>}
+                                                </div>
+                                                <form onSubmit={handleTestChat} className="p-4 border-t border-gray-100 bg-white rounded-b-2xl flex gap-2">
+                                                    <input type="text" placeholder="Digite uma mensagem..." className="flex-1 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none focus:border-blue-500" value={botTestForm.message} onChange={e => setBotTestForm({...botTestForm, message: e.target.value})} />
+                                                    <button type="submit" className="w-12 h-12 bg-blue-600 text-white flex items-center justify-center rounded-xl hover:bg-blue-700 transition-colors"><Send size={18} /></button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeBotTab === 'conversas' && (
+                                        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden flex flex-col md:flex-row h-[700px]">
+                                            <div className="w-full md:w-1/3 border-r border-gray-100 overflow-y-auto bg-slate-50">
+                                                {botConversations.map(conv => (
+                                                    <div key={conv.contact_id} className={`p-4 border-b border-gray-100 hover:bg-white cursor-pointer transition-colors ${botTestForm.activeConvId === conv.contact_id ? 'bg-white shadow-sm' : ''}`} onClick={() => setBotTestForm({...botTestForm, activeConvId: conv.contact_id})}>
+                                                        <div className="flex justify-between items-center mb-1">
+                                                            <p className="font-bold text-slate-800 truncate">{conv.contact_id}</p>
+                                                            <span className="text-[10px] text-slate-400">{new Date(conv.lastMessageAt).toLocaleDateString()}</span>
+                                                        </div>
+                                                        <p className="text-xs text-slate-500 truncate">{conv.messages[conv.messages.length - 1]?.content}</p>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                            <div className="flex-1 flex flex-col bg-slate-50/50">
+                                                {botTestForm.activeConvId ? (() => {
+                                                    const conv = botConversations.find(c => c.contact_id === botTestForm.activeConvId);
+                                                    return (
+                                                        <>
+                                                            <div className="p-4 border-b border-gray-100 bg-white font-bold text-slate-800 shadow-sm z-10 flex justify-between items-center">
+                                                                <span>Conversa: {conv.contact_id}</span>
+                                                            </div>
+                                                            <div className="flex-1 p-4 overflow-y-auto space-y-4">
+                                                                {conv.messages.map((msg) => (
+                                                                    <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-start' : 'justify-end'}`}>
+                                                                        <div className={`max-w-[80%] p-3 rounded-2xl text-sm relative group ${msg.role === 'user' ? 'bg-white border border-gray-200 text-slate-700 rounded-bl-none shadow-sm' : 'bg-green-600 text-white rounded-br-none'}`}>
+                                                                            {msg.content}
+                                                                            <div className="flex gap-1 mt-2 justify-end opacity-50 hover:opacity-100 transition-opacity">
+                                                                                <button onClick={() => handleRateConversation(msg.id, 'up')} className={`p-1 rounded ${msg.rating === 'up' ? 'text-blue-500 bg-blue-50' : 'text-slate-400 hover:bg-slate-100'}`}><ThumbsUp size={14} /></button>
+                                                                                <button onClick={() => handleRateConversation(msg.id, 'down')} className={`p-1 rounded ${msg.rating === 'down' ? 'text-red-500 bg-red-50' : 'text-slate-400 hover:bg-slate-100'}`}><ThumbsDown size={14} /></button>
+                                                                            </div>
+                                                                        </div>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        </>
+                                                    );
+                                                })() : (
+                                                    <div className="flex-1 flex items-center justify-center text-slate-400 text-sm">Selecione uma conversa à esquerda</div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            )}
                         </div>
                     )}
                 </main>

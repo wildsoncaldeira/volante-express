@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
-import { Wallet, Calendar, TrendingUp, ListTodo, User, Package, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Wallet, Calendar, TrendingUp, ListTodo, User, Package, ChevronLeft, ChevronRight, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function ExtratoPage() {
@@ -65,9 +65,12 @@ export default function ExtratoPage() {
         endRange = end.toISOString();
       }
 
-      const [anoStr, mesStr] = month.split('-');
-      const monthStart = new Date(anoStr, mesStr - 1, 1).toISOString();
-      const monthEnd = new Date(anoStr, mesStr, 0, 23, 59, 59).toISOString();
+      const startMonth = startRange.slice(0, 7);
+      const endMonth = endRange.slice(0, 7);
+      const [sAno, sMes] = startMonth.split('-');
+      const fetchStart = new Date(sAno, sMes - 1, 1).toISOString();
+      const [eAno, eMes] = endMonth.split('-');
+      const fetchEnd = new Date(eAno, eMes, 0, 23, 59, 59).toISOString();
 
       const { data: goalsData } = await supabase.from('regional_goals').select('*').eq('region_id', profileData.region_id).eq('month', month);
       const regionGoal = goalsData && goalsData.length > 0 ? goalsData[0].goal_amount : 0;
@@ -78,16 +81,19 @@ export default function ExtratoPage() {
         .select('*')
         .eq('user_id', currentUser.id)
         .eq('status', 'concluido')
-        .gte('completed_at', monthStart)
-        .lte('completed_at', monthEnd)
+        .gte('completed_at', fetchStart)
+        .lte('completed_at', fetchEnd)
         .order('completed_at', { ascending: true });
 
       if (allServices) {
-        let count = 0;
+        const countsByMonth = {};
         allServices.forEach(s => {
-            count++;
+            const sMonth = s.completed_at.slice(0, 7);
+            if (!countsByMonth[sMonth]) countsByMonth[sMonth] = 0;
+            countsByMonth[sMonth]++;
+            
             s.displayAmount = Number(s.commission_amount) || 0;
-            if (regionGoal > 0 && count > regionGoal && extraRate > 0) {
+            if (regionGoal > 0 && countsByMonth[sMonth] > regionGoal && extraRate > 0) {
                 s.isBonus = true;
                 s.displayAmount += extraRate;
             }
@@ -190,7 +196,7 @@ export default function ExtratoPage() {
         {loading ? (
           <div className="text-center py-10 text-slate-600 font-bold mt-10">Calculando extrato...</div>
         ) : (
-          <motion.div initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.2 } } }} className="space-y-6">
+          <motion.div key={viewType + '-' + month + '-' + currentWeekDate.getTime()} initial="hidden" animate="show" variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.2 } } }} className="space-y-6">
             {/* Commissions Card */}
             <motion.div variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-gradient-to-br from-green-600 to-emerald-800 p-6 rounded-3xl shadow-xl shadow-green-900/20 text-white relative overflow-hidden">
               <div className="relative z-10">
@@ -243,24 +249,15 @@ export default function ExtratoPage() {
         )}
       </main>
 
+      
+      
       <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-6 pt-2 px-6 z-40">
         <div className="flex justify-around items-center">
-          <button onClick={() => router.push('/')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-            <ListTodo size={24} />
-            <span className="text-[10px] font-medium">Agenda</span>
-          </button>
-          <button onClick={() => router.push('/estoque')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-            <Package size={24} />
-            <span className="text-[10px] font-medium">Estoque</span>
-          </button>
-          <button onClick={() => router.push('/extrato')} className="flex flex-col items-center gap-1 p-2 text-blue-500 transition-colors">
-            <Wallet size={24} strokeWidth={2.5} />
-            <span className="text-[10px] font-bold">Comissões</span>
-          </button>
-          <button onClick={() => router.push('/?activeTab=perfil')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-            <User size={24} />
-            <span className="text-[10px] font-medium">Perfil</span>
-          </button>
+          <button onClick={() => router.push('/')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><ListTodo size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Agenda</span></button>
+          <button onClick={() => router.push('/estoque')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><Package size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Estoque</span></button>
+          <button onClick={() => router.push('/extrato')} className="flex flex-col items-center gap-1 p-2 text-blue-500 transition-colors"><Wallet size={24} strokeWidth={2.5} /><span className="text-[10px] font-bold">Comissões</span></button>
+          <button onClick={() => router.push('/caixa')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><DollarSign size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Caixa</span></button>
+          <button onClick={() => router.push('/?activeTab=perfil')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><User size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Perfil</span></button>
         </div>
       </div>
     </div>

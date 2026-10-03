@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter } from 'next/navigation';
-import { Package, Search, ListTodo, Wallet, User, AlertTriangle } from 'lucide-react';
+import { Package, Search, ListTodo, Wallet, User, AlertTriangle, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 export default function EstoquePage() {
@@ -155,26 +155,17 @@ export default function EstoquePage() {
                 </div>
             </main>
 
-            <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-6 pt-2 px-6 z-40">
-                <div className="flex justify-around items-center">
-                    <button onClick={() => router.push('/')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-                        <ListTodo size={24} />
-                        <span className="text-[10px] font-medium">Agenda</span>
-                    </button>
-                    <button onClick={() => router.push('/estoque')} className="flex flex-col items-center gap-1 p-2 text-blue-500 transition-colors">
-                        <Package size={24} strokeWidth={2.5} />
-                        <span className="text-[10px] font-bold">Estoque</span>
-                    </button>
-                    <button onClick={() => router.push('/extrato')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-                        <Wallet size={24} />
-                        <span className="text-[10px] font-medium">Comissões</span>
-                    </button>
-                    <button onClick={() => router.push('/?activeTab=perfil')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors">
-                        <User size={24} />
-                        <span className="text-[10px] font-medium">Perfil</span>
-                    </button>
-                </div>
-            </div>
+            
+      
+      <div className="fixed bottom-0 left-0 right-0 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-6 pt-2 px-6 z-40">
+        <div className="flex justify-around items-center">
+          <button onClick={() => router.push('/')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><ListTodo size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Agenda</span></button>
+          <button onClick={() => router.push('/estoque')} className="flex flex-col items-center gap-1 p-2 text-blue-500 transition-colors"><Package size={24} strokeWidth={2.5} /><span className="text-[10px] font-bold">Estoque</span></button>
+          <button onClick={() => router.push('/extrato')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><Wallet size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Comissões</span></button>
+          <button onClick={() => router.push('/caixa')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><DollarSign size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Caixa</span></button>
+          <button onClick={() => router.push('/?activeTab=perfil')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><User size={24} strokeWidth={2} /><span className="text-[10px] font-medium">Perfil</span></button>
         </div>
-    );
+      </div>
+    </div>
+  );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, Suspense } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Plus, Car, MapPin, Calendar, ChevronRight, Loader2, ListTodo, Wallet, User, Clock, Lock, LogOut, Camera, Package, Trophy } from 'lucide-react';
+import { Plus, Car, MapPin, Calendar, ChevronRight, Loader2, ListTodo, Wallet, User, Clock, Lock, LogOut, Camera, Package, Trophy, DollarSign } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -430,6 +430,7 @@ function HomeContent() {
           <button onClick={() => setActiveTab('agenda')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === 'agenda' ? 'text-blue-500' : 'text-slate-500'}`}><ListTodo size={24} strokeWidth={activeTab === 'agenda' ? 2.5 : 2} /><span className="text-[10px] font-bold">Agenda</span></button>
           <button onClick={() => router.push('/estoque')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><Package size={24} /><span className="text-[10px] font-medium">Estoque</span></button>
           <button onClick={() => router.push('/extrato')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><Wallet size={24} /><span className="text-[10px] font-medium">Comissões</span></button>
+          <button onClick={() => router.push('/caixa')} className="flex flex-col items-center gap-1 p-2 text-slate-500 hover:text-slate-300 transition-colors"><DollarSign size={24} /><span className="text-[10px] font-medium">Caixa</span></button>
           <button onClick={() => setActiveTab('perfil')} className={`flex flex-col items-center gap-1 p-2 transition-colors ${activeTab === 'perfil' ? 'text-blue-500' : 'text-slate-500'}`}><User size={24} strokeWidth={activeTab === 'perfil' ? 2.5 : 2} /><span className="text-[10px] font-bold">Perfil</span></button>
         </div>
       </div>
