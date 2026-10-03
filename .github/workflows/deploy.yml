@@ -17,10 +17,8 @@ jobs:
           username: ${{ secrets.VPS_USERNAME }}
           key: ${{ secrets.VPS_SSH_KEY }}
           port: ${{ secrets.VPS_PORT }}
-          # Substitua o caminho abaixo para a pasta onde o Volante está instalado na VPS
-          # e o nome do processo no PM2 (ex: "volante" ou "volante-app")
           script: |
-            cd /caminho/para/o/seu/projeto/volante-app
+            cd /root/volanteexpress-app
             git pull origin main
             npm install
             npm run build
