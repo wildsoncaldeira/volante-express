@@ -135,7 +135,7 @@ export default function CaixaPage() {
       date: new Date().toISOString()
     };
 
-    const { error } = await supabase.from('expenses').insert([expensePayload]);
+    const { data: insertedExp, error } = await supabase.from('expenses').insert([expensePayload]).select().single();
     setSubmitting(false);
 
     if (error) {
@@ -143,6 +143,24 @@ export default function CaixaPage() {
     } else {
       toast.success('Saída solicitada! Aguardando aprovação do admin.');
       setShowForm(false);
+
+      // Dispara Notificação no Telegram em segundo plano
+      if (insertedExp?.id) {
+        fetch('/api/notifications/expense', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            expense_id: insertedExp.id,
+            description: desc,
+            amount: val,
+            category: selectedCat?.name || 'Operacional',
+            account_id: account.id,
+            account_name: account.name,
+            installer_name: profile?.full_name || 'Instalador'
+          })
+        }).catch(err => console.error('Erro ao notificar Telegram:', err));
+      }
+
       setDesc(''); setAmount(''); setCategoryId('');
       loadCaixa();
     }
