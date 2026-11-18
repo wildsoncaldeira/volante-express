@@ -72,8 +72,21 @@ export default function ExtratoPage() {
       const [eAno, eMes] = endMonth.split('-');
       const fetchEnd = new Date(eAno, eMes, 0, 23, 59, 59).toISOString();
 
-      const { data: goalsData } = await supabase.from('regional_goals').select('*').eq('region_id', profileData.region_id).eq('month', month);
-      const regionGoal = goalsData && goalsData.length > 0 ? goalsData[0].goal_amount : 0;
+      const targetMonth = viewType === 'mensal' ? month : startMonth;
+      let { data: goalsData } = await supabase.from('regional_goals').select('*').eq('region_id', profileData.region_id).eq('month', targetMonth);
+      let regionGoal = goalsData && goalsData.length > 0 ? goalsData[0].goal_amount : 0;
+      if (!regionGoal) {
+        const { data: prevGoal } = await supabase
+          .from('regional_goals')
+          .select('goal_amount')
+          .eq('region_id', profileData.region_id)
+          .lt('month', targetMonth)
+          .order('month', { ascending: false })
+          .limit(1);
+        if (prevGoal && prevGoal.length > 0) {
+          regionGoal = prevGoal[0].goal_amount;
+        }
+      }
       const extraRate = Number(profileData.extra_commission_rate) || 0;
 
       const { data: allServices, error } = await supabase

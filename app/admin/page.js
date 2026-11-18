@@ -125,6 +125,9 @@ export default function AdminPage() {
 
     const [equipeViewType, setEquipeViewType] = useState('mensal'); // 'semanal' ou 'mensal'
     const [equipeCurrentWeekDate, setEquipeCurrentWeekDate] = useState(new Date());
+    const [selectedInstallerExtratoId, setSelectedInstallerExtratoId] = useState(null);
+    const [expandedInstallerId, setExpandedInstallerId] = useState(null);
+    const [extratoSearchQuery, setExtratoSearchQuery] = useState('');
 
     // Bot States
     const [activeBotTab, setActiveBotTab] = useState('script');
@@ -297,7 +300,23 @@ export default function AdminPage() {
         setRates(rt || []);
 
         const { data: gData } = await supabase.from('regional_goals').select('*').eq('month', selectedMonth);
-        setGlobalGoals(gData || []);
+        let finalGoals = gData ? [...gData] : [];
+        const activeRegions = (regions || []).filter(r => r.slug !== 'matriz');
+        for (const r of activeRegions) {
+            if (!finalGoals.find(g => g.region_id === r.slug)) {
+                const { data: prevGoal } = await supabase
+                    .from('regional_goals')
+                    .select('*')
+                    .eq('region_id', r.slug)
+                    .lt('month', selectedMonth)
+                    .order('month', { ascending: false })
+                    .limit(1);
+                if (prevGoal && prevGoal.length > 0) {
+                    finalGoals.push(prevGoal[0]);
+                }
+            }
+        }
+        setGlobalGoals(finalGoals);
 
         setLoading(false);
     }
@@ -507,7 +526,7 @@ export default function AdminPage() {
         const payload = { ...editingItem };
 
         if (modalType === 'appointment') {
-            const originalAppointment = appointments.find(a => a.id === payload.id) || {};
+            const originalAppointment = appointments.find(a => a.id === payload.id) || futureAppointments.find(a => a.id === payload.id) || {};
 
             // 0. Handle Inventory adjustment if coating changed on a completed appointment
             const oldId = String(originalAppointment.material_used_id || '').trim();
@@ -556,6 +575,16 @@ export default function AdminPage() {
                 payload.net_amount_2 = null;
                 payload.account_id_2 = null;
             }
+
+            // 3. Handle Commission Amount & User
+            if (payload.commission_amount !== undefined && payload.commission_amount !== null && payload.commission_amount !== '') {
+                payload.commission_amount = parseFloat(payload.commission_amount) || 0;
+            } else {
+                payload.commission_amount = 0;
+            }
+            if (payload.user_id === '') {
+                payload.user_id = null;
+            }
         }
 
         const fieldsToDelete = ['expense_categories', 'label', 'val', 'net_val', 'city', 'desc', 'email', 'account_name', 'account_region', 'is_primary', '_new_account_id', '_new_account_id_2'];
@@ -566,7 +595,11 @@ export default function AdminPage() {
 
         const { error } = await supabase.from(table).update(payload).eq('id', editingItem.id);
         if (error) toast.error('Erro: ' + error.message);
-        else { setShowEditModal(false); fetchData(); }
+        else { 
+            setShowEditModal(false); 
+            fetchData(); 
+            toast.success('Alterações salvas com sucesso!'); 
+        }
     }
 
     // --- FINANCEIRO ---
@@ -718,7 +751,7 @@ export default function AdminPage() {
         
         return installers.map(inst => {
             const myMonthlyApps = appsToCount.filter(a => a.user_id === inst.id).sort((a, b) => new Date(a.completed_at || a.appointment_at) - new Date(b.completed_at || b.appointment_at));
-            const myWeeklyApps = appointments.filter(a => a.user_id === inst.id);
+            const myPeriodApps = appointments.filter(a => a.user_id === inst.id);
             
             let total = 0;
             let bonusAmount = 0;
@@ -727,13 +760,26 @@ export default function AdminPage() {
             const regionGoal = globalGoals.find(g => g.region_id === inst.region_id)?.goal_amount || 0;
             const extraRate = Number(inst.extra_commission_rate) || 0;
 
-            for (let app of myWeeklyApps) {
-                total += (Number(app.commission_amount) || 0);
-                const indexInMonth = myMonthlyApps.findIndex(ma => ma.id === app.id);
-                if (indexInMonth >= 0 && regionGoal > 0 && (indexInMonth + 1) > regionGoal) {
-                    bonusAmount += extraRate;
-                }
-            }
+            const detailedAppointments = myPeriodApps
+                .sort((a, b) => new Date(b.completed_at || b.appointment_at) - new Date(a.completed_at || a.appointment_at))
+                .map(app => {
+                    const baseComm = Number(app.commission_amount) || 0;
+                    const indexInMonth = myMonthlyApps.findIndex(ma => ma.id === app.id);
+                    const isBonus = indexInMonth >= 0 && regionGoal > 0 && (indexInMonth + 1) > regionGoal;
+                    const bonusComm = isBonus ? extraRate : 0;
+                    const finalComm = baseComm + bonusComm;
+
+                    total += baseComm;
+                    if (isBonus) bonusAmount += bonusComm;
+
+                    return {
+                        ...app,
+                        baseCommission: baseComm,
+                        isBonus,
+                        bonusCommission: bonusComm,
+                        finalCommission: finalComm
+                    };
+                });
 
             if (regionGoal > 0 && myMonthlyApps.length >= regionGoal) {
                 goalReached = true;
@@ -742,11 +788,26 @@ export default function AdminPage() {
             total += bonusAmount;
 
             return {
-                id: inst.id, name: inst.full_name || inst.email, count: myWeeklyApps.length, total: total,
-                region_id: inst.region_id, goalReached, bonusAmount, goal: regionGoal
+                id: inst.id,
+                name: inst.full_name || inst.name || inst.email,
+                count: myPeriodApps.length,
+                total: total,
+                baseTotal: total - bonusAmount,
+                region_id: inst.region_id,
+                goalReached,
+                bonusAmount,
+                goal: regionGoal,
+                extraRate,
+                commissionRate: Number(inst.commission_rate) || 0,
+                appointments: detailedAppointments
             };
         });
     }, [appointments, monthlyAppointments, installers, globalGoals, activeTab, equipeViewType]);
+
+    const activeInstallerExtrato = useMemo(() => {
+        if (!selectedInstallerExtratoId) return null;
+        return commissionReport.find(r => r.id === selectedInstallerExtratoId) || null;
+    }, [selectedInstallerExtratoId, commissionReport]);
 
     const displayAccounts = useMemo(() => {
         return accounts.filter(acc => selectedRegion === 'all' || acc.type === 'banco' || acc.region_id === selectedRegion);
@@ -875,12 +936,14 @@ export default function AdminPage() {
                 return;
             }
 
+            if (e.key === 'Escape') {
+                if (showEditModal) { setShowEditModal(false); return; }
+                if (selectedInstallerExtratoId) { setSelectedInstallerExtratoId(null); return; }
+                if (selectedTransaction) { setSelectedTransaction(null); return; }
+            }
+
             // --- Modal de Atendimentos (Visualização) ---
             if (selectedTransaction) {
-                if (e.key === 'Escape') {
-                    setSelectedTransaction(null);
-                    return;
-                }
                 if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
                     const sorted = [...filteredAppointments].sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at));
                     const idx = sorted.findIndex(a => a.id === selectedTransaction.id);
@@ -1208,6 +1271,15 @@ export default function AdminPage() {
                                                                         <td className="p-4">
                                                                             <p className="font-bold text-slate-800">{a.customer_name}</p>
                                                                             <p className="text-xs text-slate-500">{a.vehicle_model} {a.vehicle_year && `(${a.vehicle_year})`}</p>
+                                                                            {a.user_id && (() => {
+                                                                                const inst = installers.find(i => i.id === a.user_id);
+                                                                                return (
+                                                                                    <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1 border border-blue-100">
+                                                                                        <Users size={10} />
+                                                                                        {inst?.full_name?.split(' ')[0] || inst?.name || 'Instalador'}: R$ {Number(a.commission_amount || 0).toFixed(2)}
+                                                                                    </span>
+                                                                                );
+                                                                            })()}
                                                                         </td>
                                                                         <td className="p-4 text-slate-600">
                                                                             {a.calendar_name || '-'}
@@ -1256,6 +1328,15 @@ export default function AdminPage() {
                                                                                 <span className="capitalize">Valor</span>
                                                                                 <span className="text-emerald-600 font-bold">R$ {Number(a.gross_amount).toFixed(2)}</span>
                                                                             </div>
+                                                                            {a.user_id && (() => {
+                                                                                const inst = installers.find(i => i.id === a.user_id);
+                                                                                return (
+                                                                                    <div className="flex justify-between font-medium text-blue-700 pt-1 border-t border-slate-200 mt-1 text-[11px]">
+                                                                                        <span className="truncate">{inst?.full_name || inst?.name || 'Instalador'}</span>
+                                                                                        <span className="font-bold shrink-0">Comissão: R$ {Number(a.commission_amount || 0).toFixed(2)}</span>
+                                                                                    </div>
+                                                                                );
+                                                                            })()}
                                                                         </div>
                                                                         <div className="flex shrink-0 gap-1 items-center">
                                                                             <button onClick={() => openEditModal('appointment', a)} className="p-2 text-blue-500 bg-white hover:bg-blue-50 rounded-lg border border-slate-200 shadow-sm"><Pencil size={14}/></button>
@@ -1309,6 +1390,15 @@ export default function AdminPage() {
                                                                         <td className="p-4">
                                                                             <p className="font-bold text-slate-800">{a.customer_name}</p>
                                                                             <p className="text-xs text-slate-500 capitalize">{a.vehicle_model} • {a.region_id}</p>
+                                                                            {a.user_id && (() => {
+                                                                                const inst = installers.find(i => i.id === a.user_id);
+                                                                                return (
+                                                                                    <span className="text-[10px] text-blue-700 font-semibold bg-blue-50 px-2 py-0.5 rounded-md mt-1 inline-flex items-center gap-1 border border-blue-100">
+                                                                                        <Users size={10} />
+                                                                                        {inst?.full_name?.split(' ')[0] || inst?.name || 'Instalador'}: R$ {Number(a.commission_amount || 0).toFixed(2)}
+                                                                                    </span>
+                                                                                );
+                                                                            })()}
                                                                         </td>
                                                                         <td className="p-4 text-slate-600">
                                                                             {a.calendar_name || '-'}
@@ -1368,6 +1458,20 @@ export default function AdminPage() {
                                                                             <span className="text-slate-600 text-xs break-words leading-tight block">{inventory.find(i => i.id === a.material_used_id)?.name || '-'}</span>
                                                                         </div>
                                                                     </div>
+                                                                    {a.user_id && (() => {
+                                                                        const inst = installers.find(i => i.id === a.user_id);
+                                                                        return (
+                                                                            <div className="flex items-center justify-between bg-blue-50/70 border border-blue-100 rounded-lg px-2.5 py-1 text-[11px] text-blue-800">
+                                                                                <span className="font-medium flex items-center gap-1">
+                                                                                    <Users size={12} className="text-blue-500" />
+                                                                                    {inst?.full_name || inst?.name || 'Instalador'}
+                                                                                </span>
+                                                                                <span className="font-bold">
+                                                                                    Comissão: R$ {Number(a.commission_amount || 0).toFixed(2)}
+                                                                                </span>
+                                                                            </div>
+                                                                        );
+                                                                    })()}
                                                                     <div className="flex justify-between items-center text-xs mt-1 gap-3">
                                                                         <div className="flex-1 space-y-1 bg-slate-50 border border-slate-200 shadow-sm rounded-lg p-2">
                                                                             <div className="flex justify-between font-medium text-slate-600">
@@ -1622,7 +1726,85 @@ export default function AdminPage() {
                                             )}
                                         </div>
                                     </div>
-                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">{commissionReport.map((rep, i) => (<motion.div key={i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative"><button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500"><Pencil size={16} /></button><p className="font-bold text-slate-800 text-lg">{rep.name}</p><p className="text-xs text-slate-500 font-medium mb-4">{rep.count} serviços / Meta {rep.goal > 0 ? rep.goal : 'N/A'} • Regional {rep.region_id || 'N/A'}</p>{rep.goalReached && <div className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded w-fit mb-3 flex items-center gap-1">🏆 Meta Atingida! {rep.bonusAmount > 0 ? `(+R$ ${rep.bonusAmount.toFixed(2)})` : ''}</div>}<div className="border-t border-slate-200 pt-4 flex justify-between items-center"><span className="text-slate-400 text-xs font-medium">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span><p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p></div></motion.div>))}</motion.div>
+                                    <motion.div variants={{ hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.1 } } }} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                                        {commissionReport.map((rep, i) => (
+                                            <motion.div key={rep.id || i} variants={{ hidden: { opacity: 0, scale: 0.9, y: 15 }, show: { opacity: 1, scale: 1, y: 0, transition: { type: "spring", stiffness: 300, damping: 24 } } }} className="bg-slate-50 p-5 rounded-2xl border border-slate-200 group relative flex flex-col justify-between">
+                                                <div>
+                                                    <button onClick={() => { const installer = installers.find(inst => inst.id === rep.id); if (installer) openEditModal('installer', installer); }} className="absolute top-4 right-4 text-slate-300 hover:text-blue-500 p-1" title="Editar dados do instalador"><Pencil size={16} /></button>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-bold text-slate-800 text-lg">{rep.name}</p>
+                                                    </div>
+                                                    <p className="text-xs text-slate-500 font-medium mb-3 flex items-center gap-1.5 mt-0.5">
+                                                        <span className="font-semibold text-slate-600">{rep.count} serviços</span>
+                                                        <span>•</span>
+                                                        <span>Meta: {rep.goal > 0 ? rep.goal : 'N/A'}</span>
+                                                        <span>•</span>
+                                                        <span className="uppercase text-[10px] bg-slate-200/70 text-slate-700 px-1.5 py-0.5 rounded font-bold">{rep.region_id || 'Geral'}</span>
+                                                    </p>
+                                                    {rep.goalReached && (
+                                                        <div className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-lg w-fit mb-3 flex items-center gap-1">
+                                                            🏆 Meta Atingida! {rep.bonusAmount > 0 ? `(+R$ ${rep.bonusAmount.toFixed(2)})` : ''}
+                                                        </div>
+                                                    )}
+                                                    <div className="border-t border-slate-200 pt-3 flex justify-between items-center">
+                                                        <div>
+                                                            <span className="text-slate-400 text-xs font-medium block">A Pagar ({equipeViewType === 'semanal' ? 'Semana' : 'Mês'})</span>
+                                                            <span className="text-[10px] text-slate-400">Padrão: R$ {rep.commissionRate.toFixed(2)}/serviço</span>
+                                                        </div>
+                                                        <p className="text-2xl font-bold text-slate-900">R$ {rep.total.toFixed(2)}</p>
+                                                    </div>
+                                                </div>
+
+                                                <div className="mt-4 pt-3 border-t border-slate-200/80 space-y-2">
+                                                    <button
+                                                        onClick={() => setSelectedInstallerExtratoId(rep.id)}
+                                                        className="w-full py-2.5 px-3 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all flex items-center justify-center gap-2 shadow-sm"
+                                                    >
+                                                        <Wallet size={15} />
+                                                        Ver Extrato de Comissões ({rep.count})
+                                                    </button>
+
+                                                    <button
+                                                        onClick={() => setExpandedInstallerId(expandedInstallerId === rep.id ? null : rep.id)}
+                                                        className="w-full py-1 text-[11px] text-slate-500 hover:text-slate-700 font-semibold flex items-center justify-center gap-1 transition-colors"
+                                                    >
+                                                        <span>{expandedInstallerId === rep.id ? 'Ocultar lista rápida' : `Ver lista rápida (${rep.count})`}</span>
+                                                        <ChevronDown size={14} className={`transition-transform duration-200 ${expandedInstallerId === rep.id ? 'rotate-180' : ''}`} />
+                                                    </button>
+
+                                                    {expandedInstallerId === rep.id && (
+                                                        <div className="pt-2 space-y-2 max-h-60 overflow-y-auto pr-1 animate-in fade-in duration-150">
+                                                            {rep.appointments.length === 0 ? (
+                                                                <p className="text-xs text-slate-400 italic text-center py-2">Nenhum atendimento finalizado neste período.</p>
+                                                            ) : (
+                                                                rep.appointments.map(app => (
+                                                                    <div key={app.id} className="bg-white p-2.5 rounded-xl border border-slate-200 flex justify-between items-center text-xs hover:border-slate-300 transition-colors shadow-2xs">
+                                                                        <div className="pr-2 min-w-0">
+                                                                            <p className="font-bold text-slate-800 truncate leading-tight">{app.vehicle_model || 'Veículo'}</p>
+                                                                            <p className="text-[10px] text-slate-500 truncate">{app.customer_name} • {new Date(app.completed_at || app.appointment_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}</p>
+                                                                        </div>
+                                                                        <div className="flex items-center gap-1.5 shrink-0">
+                                                                            <div className="text-right">
+                                                                                <span className="font-bold text-emerald-600 block leading-tight">+ R$ {Number(app.finalCommission).toFixed(2)}</span>
+                                                                                {app.isBonus && <span className="text-[8px] text-emerald-700 bg-emerald-50 px-1 py-0.2 rounded font-bold border border-emerald-100">Bônus</span>}
+                                                                            </div>
+                                                                            <button 
+                                                                                onClick={() => openEditModal('appointment', app)} 
+                                                                                className="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors"
+                                                                                title="Editar atendimento / comissão"
+                                                                            >
+                                                                                <Pencil size={12} />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                ))
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </motion.div>
+                                        ))}
+                                    </motion.div>
                                 </motion.div>
                             )}
 
@@ -1992,6 +2174,30 @@ export default function AdminPage() {
                                 {inventory.map(i => <option key={i.id} value={i.id}>{i.name}</option>)}
                             </select>
                         </div>
+                        <div>
+                            <label className="text-[10px] font-bold uppercase text-slate-500">Instalador Responsável</label>
+                            <select 
+                                className="w-full p-2 border border-slate-200 bg-slate-50 rounded-lg text-sm text-slate-800" 
+                                value={editingItem.user_id || ''} 
+                                onChange={e => {
+                                    const newUid = e.target.value;
+                                    const inst = installers.find(i => i.id === newUid);
+                                    const shouldUpdateComm = editingItem.commission_amount === undefined || editingItem.commission_amount === null || editingItem.commission_amount === '' || Number(editingItem.commission_amount) === 0;
+                                    setEditingItem({ 
+                                        ...editingItem, 
+                                        user_id: newUid || null,
+                                        commission_amount: shouldUpdateComm && inst ? inst.commission_rate : editingItem.commission_amount
+                                    });
+                                }}
+                            >
+                                <option value="">Não atribuído</option>
+                                {installers.map(inst => (
+                                    <option key={inst.id} value={inst.id}>
+                                        {inst.full_name || inst.name || inst.email} ({inst.region_id || 'Geral'})
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
                     <div className="space-y-3">
                         <h4 className="font-bold text-slate-600 text-[10px] tracking-wider uppercase border-b border-gray-100 pb-1 mb-2 flex items-center justify-between">
@@ -2039,6 +2245,35 @@ export default function AdminPage() {
                                 </div>
                             </div>
                         )}
+
+                        <div className="space-y-1.5 bg-emerald-50/70 p-2.5 rounded-xl border border-emerald-200 mt-2">
+                            <div className="flex items-center justify-between">
+                                <label className="text-[10px] font-bold uppercase text-emerald-800 flex items-center gap-1.5">
+                                    <Wallet size={13} className="text-emerald-600" />
+                                    Comissão do Instalador (R$)
+                                </label>
+                                {editingItem.user_id && (() => {
+                                    const inst = installers.find(i => i.id === editingItem.user_id);
+                                    return inst ? (
+                                        <span className="text-[10px] text-emerald-700 font-semibold lowercase">
+                                            padrão: R$ {Number(inst.commission_rate || 0).toFixed(2)}
+                                        </span>
+                                    ) : null;
+                                })()}
+                            </div>
+                            <input 
+                                type="number" 
+                                step="0.01" 
+                                className="w-full p-2 border border-emerald-300 bg-white rounded-lg text-sm font-bold text-emerald-800 focus:outline-none focus:ring-2 focus:ring-emerald-500" 
+                                placeholder="0.00"
+                                value={editingItem.commission_amount ?? ''} 
+                                onChange={e => setEditingItem({ ...editingItem, commission_amount: e.target.value })} 
+                            />
+                            <p className="text-[9px] text-emerald-700/80 leading-tight">
+                                Altere este valor para definir a comissão específica deste atendimento.
+                            </p>
+                        </div>
+
                         <p className="text-[10px] text-slate-500 bg-slate-100 p-2 rounded-lg leading-tight mt-2 border border-slate-200">Valores líquidos recalculam sozinhos. Alterar revestimento <strong className="text-emerald-600">agora atualiza o estoque</strong> automaticamente.</p>
                     </div>
                 </div>
@@ -2125,17 +2360,263 @@ export default function AdminPage() {
 
                                     <div className="grid grid-cols-2 gap-3 pt-2">
                                         {selectedTransaction.net_amount && (
-                                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex flex-col justify-center col-span-2">
+                                            <div className="bg-blue-50 p-3 rounded-lg border border-blue-100 flex flex-col justify-center">
                                                 <p className="text-[9px] font-bold text-blue-500 uppercase">Líquido (Empresa)</p>
                                                 <p className="font-bold text-blue-700 text-base">R$ {Number(selectedTransaction.net_amount).toFixed(2)}</p>
                                             </div>
                                         )}
+                                        <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100 flex flex-col justify-center">
+                                            <p className="text-[9px] font-bold text-emerald-600 uppercase">Comissão Instalador</p>
+                                            <p className="font-bold text-emerald-700 text-base">
+                                                R$ {Number(selectedTransaction.commission_amount || 0).toFixed(2)}
+                                                {selectedTransaction.user_id && (() => {
+                                                    const inst = installers.find(i => i.id === selectedTransaction.user_id);
+                                                    return inst ? <span className="text-[10px] text-emerald-600 font-normal block truncate">({inst.full_name || inst.name})</span> : null;
+                                                })()}
+                                            </p>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
                         <div className="p-3 bg-slate-50 border-t border-slate-100 text-center">
                             <p className="text-[10px] text-slate-400 font-medium">Pressione <kbd className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">ESC</kbd> para fechar ou <kbd className="bg-white border border-slate-200 px-1.5 py-0.5 rounded text-slate-600">Setas</kbd> para navegar</p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* MODAL DE EXTRATO DE COMISSÕES DO INSTALADOR (Equipe) */}
+            {selectedInstallerExtratoId && activeInstallerExtrato && (
+                <div className="fixed inset-0 z-[65] flex items-center justify-center p-3 sm:p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200 border border-slate-200">
+                        {/* Header */}
+                        <div className="p-4 sm:p-5 bg-slate-900 text-white flex justify-between items-center border-b border-slate-800">
+                            <div className="flex items-center gap-3">
+                                <div className="w-10 h-10 rounded-2xl bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-blue-400">
+                                    <Wallet size={20} />
+                                </div>
+                                <div>
+                                    <h3 className="font-bold text-base sm:text-lg flex items-center gap-2">
+                                        Extrato de Comissões
+                                        <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
+                                            {activeInstallerExtrato.region_id || 'Regional'}
+                                        </span>
+                                    </h3>
+                                    <p className="text-xs text-blue-400 font-medium">{activeInstallerExtrato.name}</p>
+                                </div>
+                            </div>
+                            <button 
+                                onClick={() => { setSelectedInstallerExtratoId(null); setExtratoSearchQuery(''); }} 
+                                className="p-2 hover:bg-slate-800 rounded-full text-slate-400 hover:text-white transition-colors"
+                                title="Fechar"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        {/* Modal Body */}
+                        <div className="overflow-y-auto p-4 sm:p-6 space-y-5 bg-slate-50/50 flex-1">
+                            {/* Period controls inside modal */}
+                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3 bg-white p-3 rounded-2xl border border-slate-200 shadow-sm">
+                                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
+                                    <button 
+                                        onClick={() => setEquipeViewType('mensal')} 
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${equipeViewType === 'mensal' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Mensal
+                                    </button>
+                                    <button 
+                                        onClick={() => setEquipeViewType('semanal')} 
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${equipeViewType === 'semanal' ? 'bg-white text-blue-700 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                                    >
+                                        Semanal
+                                    </button>
+                                </div>
+
+                                {equipeViewType === 'semanal' ? (
+                                    <div className="flex items-center gap-2">
+                                        <button 
+                                            onClick={() => { const d = new Date(equipeCurrentWeekDate); d.setDate(d.getDate() - 7); setEquipeCurrentWeekDate(d); }} 
+                                            className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"
+                                        >
+                                            <ChevronLeft size={16} />
+                                        </button>
+                                        <span className="text-xs font-bold text-slate-700 whitespace-nowrap">
+                                            Semana {(() => {
+                                                const current = new Date(equipeCurrentWeekDate);
+                                                const day = current.getDay();
+                                                const diff = current.getDate() - day + (day === 0 ? -6 : 1);
+                                                const startW = new Date(current.setDate(diff));
+                                                const endW = new Date(startW);
+                                                endW.setDate(startW.getDate() + 6);
+                                                return `${startW.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })} a ${endW.toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' })}`;
+                                            })()}
+                                        </span>
+                                        <button 
+                                            onClick={() => { const d = new Date(equipeCurrentWeekDate); d.setDate(d.getDate() + 7); setEquipeCurrentWeekDate(d); }} 
+                                            className="p-1.5 bg-slate-100 rounded-lg hover:bg-slate-200 text-slate-600"
+                                        >
+                                            <ChevronRight size={16} />
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <span className="text-xs font-bold text-slate-600">
+                                        Mês de referência: {selectedMonth.split('-')[1]}/{selectedMonth.split('-')[0]}
+                                    </span>
+                                )}
+                            </div>
+
+                            {/* Total Commission Card (Styled like the installer app /extrato) */}
+                            <div className="bg-gradient-to-br from-green-600 via-emerald-600 to-teal-800 p-5 sm:p-6 rounded-3xl shadow-lg shadow-green-900/15 text-white relative overflow-hidden">
+                                <div className="relative z-10">
+                                    <p className="text-green-100 text-xs sm:text-sm font-medium mb-1 flex items-center gap-2">
+                                        <Wallet size={16} />
+                                        {equipeViewType === 'semanal' ? 'Comissões da Semana' : `Comissões em ${selectedMonth.split('-')[1]}/${selectedMonth.split('-')[0]}`}
+                                    </p>
+                                    <h2 className="text-3xl sm:text-4xl font-extrabold tracking-tight">
+                                        R$ {activeInstallerExtrato.total.toFixed(2)}
+                                    </h2>
+                                    <div className="flex flex-wrap items-center gap-3 mt-3">
+                                        <span className="text-green-100 text-xs bg-white/15 backdrop-blur-sm px-2.5 py-1 rounded-full font-medium">
+                                            {activeInstallerExtrato.count} serviços realizados
+                                        </span>
+                                        {activeInstallerExtrato.goalReached && (
+                                            <span className="text-yellow-200 text-xs bg-yellow-400/20 border border-yellow-300/30 px-2.5 py-1 rounded-full font-bold flex items-center gap-1">
+                                                🏆 Meta Atingida! {activeInstallerExtrato.bonusAmount > 0 ? `(+R$ ${activeInstallerExtrato.bonusAmount.toFixed(2)} bônus)` : ''}
+                                            </span>
+                                        )}
+                                        <span className="text-green-200 text-xs opacity-90">
+                                            Taxa padrão: R$ {activeInstallerExtrato.commissionRate.toFixed(2)}
+                                        </span>
+                                    </div>
+                                </div>
+                                <TrendingUp className="absolute right-3 bottom-2 text-white/10 pointer-events-none" size={100} />
+                            </div>
+
+                            {/* History Section Header & Search */}
+                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-2 pt-2">
+                                <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider flex items-center gap-2">
+                                    <ListTodo size={16} className="text-blue-600" />
+                                    {equipeViewType === 'semanal' ? 'Atendimentos da Semana' : 'Atendimentos do Mês'}
+                                    <span className="text-slate-400 font-normal">({activeInstallerExtrato.appointments.length})</span>
+                                </h4>
+                                {activeInstallerExtrato.appointments.length > 3 && (
+                                    <div className="relative">
+                                        <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                                        <input 
+                                            type="text" 
+                                            placeholder="Buscar veículo ou cliente..."
+                                            value={extratoSearchQuery}
+                                            onChange={e => setExtratoSearchQuery(e.target.value)}
+                                            className="pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-700 focus:outline-none focus:border-blue-500 w-full sm:w-56"
+                                        />
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* List of Appointments (Extrato) */}
+                            <div className="space-y-3">
+                                {activeInstallerExtrato.appointments.length === 0 ? (
+                                    <div className="text-center py-12 border border-dashed border-slate-300 rounded-2xl bg-white p-6">
+                                        <ListTodo size={32} className="mx-auto text-slate-300 mb-2" />
+                                        <p className="text-slate-500 text-sm font-medium">Nenhum atendimento realizado neste período.</p>
+                                        <p className="text-slate-400 text-xs mt-1">Conclua atendimentos ou altere a semana/mês selecionado.</p>
+                                    </div>
+                                ) : (
+                                    activeInstallerExtrato.appointments
+                                        .filter(app => {
+                                            if (!extratoSearchQuery) return true;
+                                            const q = extratoSearchQuery.toLowerCase();
+                                            return (app.vehicle_model || '').toLowerCase().includes(q) ||
+                                                   (app.customer_name || '').toLowerCase().includes(q) ||
+                                                   (app.calendar_name || '').toLowerCase().includes(q);
+                                        })
+                                        .map(app => (
+                                            <div 
+                                                key={app.id} 
+                                                className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm hover:border-slate-300 transition-all flex flex-col sm:flex-row justify-between sm:items-center gap-3 group"
+                                            >
+                                                <div className="space-y-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <p className="font-bold text-slate-900 text-sm">{app.vehicle_model || 'Veículo não informado'}</p>
+                                                        <span className="text-[10px] text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full font-medium">
+                                                            {app.customer_name || 'Cliente'}
+                                                        </span>
+                                                    </div>
+                                                    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                                                        <span className="flex items-center gap-1">
+                                                            <Calendar size={12} className="text-slate-400" />
+                                                            {new Date(app.completed_at || app.appointment_at).toLocaleDateString('pt-BR')} às{' '}
+                                                            {new Date(app.completed_at || app.appointment_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>
+                                                        {app.calendar_name && (
+                                                            <span>• {app.calendar_name}</span>
+                                                        )}
+                                                        {app.gross_amount && (
+                                                            <span className="text-slate-400">• R$ {Number(app.gross_amount).toFixed(2)} ({app.payment_method || 'pgto'})</span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                <div className="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 shrink-0">
+                                                    <div className="text-left sm:text-right">
+                                                        <span className="block font-bold text-emerald-600 text-base">
+                                                            + R$ {Number(app.finalCommission).toFixed(2)}
+                                                        </span>
+                                                        <div className="flex items-center gap-1.5 mt-0.5 justify-start sm:justify-end flex-wrap">
+                                                            {app.isBonus && (
+                                                                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold border border-emerald-200">
+                                                                    Bônus Meta (+R$ {Number(app.bonusCommission).toFixed(2)})
+                                                                </span>
+                                                            )}
+                                                            {Number(app.baseCommission) !== Number(activeInstallerExtrato.commissionRate) && (
+                                                                <span className="text-[10px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded-full font-bold border border-blue-200" title="Comissão personalizada para este atendimento">
+                                                                    Ajustada
+                                                                </span>
+                                                            )}
+                                                            <span className="text-[10px] text-slate-500 bg-slate-100 px-2 py-0.5 rounded-full font-semibold">
+                                                                Concluído
+                                                            </span>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Action buttons */}
+                                                    <div className="flex items-center gap-1">
+                                                        <button 
+                                                            onClick={() => setSelectedTransaction(app)}
+                                                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                                                            title="Ver detalhes / Foto"
+                                                        >
+                                                            <Eye size={16} />
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => openEditModal('appointment', app)}
+                                                            className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors border border-transparent hover:border-blue-100"
+                                                            title="Editar atendimento / Alterar comissão"
+                                                        >
+                                                            <Pencil size={16} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))
+                                )}
+                            </div>
+                        </div>
+
+                        {/* Modal Footer */}
+                        <div className="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                            <span className="text-xs text-slate-500 font-medium flex items-center gap-1.5">
+                                <Pencil size={13} className="text-blue-500 shrink-0" />
+                                <span>Você pode alterar a comissão de cada atendimento clicando no ícone do lápis.</span>
+                            </span>
+                            <button 
+                                onClick={() => { setSelectedInstallerExtratoId(null); setExtratoSearchQuery(''); }} 
+                                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition-colors shadow-sm"
+                            >
+                                Fechar
+                            </button>
                         </div>
                     </div>
                 </div>

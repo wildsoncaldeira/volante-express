@@ -78,6 +78,9 @@ export default function AtendimentoPage({ params }) {
       if (appError) throw appError;
       setAppointment(appData);
       setSelectedCity(appData.calendar_name || '');
+      if (appData.commission_amount !== null && appData.commission_amount !== undefined && Number(appData.commission_amount) > 0) {
+        setMyCommission(Number(appData.commission_amount));
+      }
 
       if (appData.region_id) {
         // 2. Busca Estoque
