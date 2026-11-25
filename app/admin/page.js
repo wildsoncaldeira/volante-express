@@ -165,6 +165,10 @@ export default function AdminPage() {
     const [botFaqs, setBotFaqs] = useState([]);
     const [botRegionais, setBotRegionais] = useState([]);
     const [botConversations, setBotConversations] = useState([]);
+    const [botCalendarios, setBotCalendarios] = useState([]);
+    const [agendaTexto, setAgendaTexto] = useState('');
+    const [agendaSalvando, setAgendaSalvando] = useState(false);
+    const [agendaResultado, setAgendaResultado] = useState('');
     const [chatHistory, setChatHistory] = useState([]);
     const [botTestForm, setBotTestForm] = useState({ city: 'Belo Horizonte', attendanceDate: 'Sexta-feira', message: '', contactName: 'Teste' });
 
@@ -366,6 +370,9 @@ export default function AdminPage() {
         } else if (activeBotTab === 'regionais') {
             const data = await botGet('regionais');
             if (Array.isArray(data)) setBotRegionais(data);
+        } else if (activeBotTab === 'agenda') {
+            const data = await botGet('calendarios');
+            if (Array.isArray(data)) setBotCalendarios(data);
         } else if (activeBotTab === 'conversas') {
             const data = await botGet('conversas');
             if (!Array.isArray(data)) return;
@@ -408,6 +415,24 @@ export default function AdminPage() {
             fetchBotData();
         }
     }, [activeTab, activeBotTab]);
+
+    async function handleSalvarAgenda() {
+        if (!agendaTexto.trim()) return toast.error('Cole a agenda primeiro');
+        setAgendaSalvando(true); setAgendaResultado('');
+        try {
+            const r = await botAction({ action: 'save_agenda', texto: agendaTexto });
+            const ok = r.aplicados?.length || 0;
+            const extra = [
+                r.naoEncontrados?.length ? `⚠ ${r.naoEncontrados.length} cidade(s) não encontrada(s): ${r.naoEncontrados.join(' | ')}` : '',
+                r.invalidas?.length ? `⚠ ${r.invalidas.length} linha(s) inválida(s): ${r.invalidas.join(' | ')}` : '',
+            ].filter(Boolean).join(' · ');
+            setAgendaResultado(`✓ ${ok} aplicada(s)${extra ? ' · ' + extra : ''}`);
+            toast.success(`${ok} cidade(s) atualizada(s)`);
+            const data = await botGet('calendarios');
+            if (Array.isArray(data)) setBotCalendarios(data);
+        } catch (e) { toast.error('Erro: ' + e.message); }
+        finally { setAgendaSalvando(false); }
+    }
 
     // Bot Handlers
     async function handleSaveBotScript() {
@@ -1992,7 +2017,7 @@ export default function AdminPage() {
 
                                     {/* Sub-abas */}
                                     <div className="flex overflow-x-auto gap-2 bg-slate-100 p-1 rounded-xl">
-                                        {['script', 'faq', 'regionais', 'chat', 'conversas'].map(sub => (
+                                        {['script', 'faq', 'regionais', 'agenda', 'chat', 'conversas'].map(sub => (
                                             <button key={sub} onClick={() => setActiveBotTab(sub)} className={`px-4 py-2 rounded-lg text-sm font-semibold capitalize whitespace-nowrap transition-colors ${activeBotTab === sub ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}>
                                                 {sub}
                                             </button>
@@ -2087,6 +2112,35 @@ export default function AdminPage() {
                                                         ))}
                                                     </tbody>
                                                 </table>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeBotTab === 'agenda' && (
+                                        <div className="space-y-4">
+                                            <div className="bg-white border border-gray-100 rounded-2xl p-5">
+                                                <h3 className="font-bold text-slate-800 mb-1">Agenda das regionais</h3>
+                                                <p className="text-xs text-slate-500 mb-3">Cole <b>uma linha por cidade</b>, no formato <b>Cidade dd/mm</b> (ex.: <code>Divinópolis 27/11</code>). Também aceita <code>dd/mm/aaaa</code>. A data vira o dia do atendimento daquela cidade.</p>
+                                                <textarea className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 outline-none focus:border-blue-500"
+                                                    value={agendaTexto} onChange={e => setAgendaTexto(e.target.value)}
+                                                    placeholder={"Divinópolis 27/11\nSete Lagoas 26/11\nPedro Leopoldo 30/11"} />
+                                                <div className="flex flex-wrap gap-3 mt-3 items-center">
+                                                    <button onClick={handleSalvarAgenda} disabled={agendaSalvando} className="bg-blue-600 text-white font-bold py-2.5 px-5 rounded-xl text-sm hover:bg-blue-700 disabled:opacity-50">
+                                                        {agendaSalvando ? 'Salvando…' : 'Salvar agenda'}
+                                                    </button>
+                                                    {agendaResultado && <div className="text-xs text-slate-600">{agendaResultado}</div>}
+                                                </div>
+                                            </div>
+                                            <div className="bg-white border border-gray-100 rounded-2xl p-5">
+                                                <h3 className="font-bold text-slate-800 mb-3">Cidades e datas ({botCalendarios.length})</h3>
+                                                <div className="grid md:grid-cols-3 gap-2">
+                                                    {botCalendarios.map(c => (
+                                                        <div key={c.city} className="flex justify-between items-center text-sm border border-slate-100 rounded-lg px-3 py-2">
+                                                            <span className="text-slate-700">{c.city}</span>
+                                                            <span className={'font-mono ' + (c.attendance_date ? 'text-emerald-600' : 'text-slate-400')}>{c.attendance_date || '—'}</span>
+                                                        </div>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </div>
                                     )}
