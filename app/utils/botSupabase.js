@@ -39,6 +39,12 @@ export async function requireUser(req) {
   if (error || !data?.user) {
     const e = new Error('Sessão inválida'); e.status = 401; throw e;
   }
+  // Opcional: se ADMIN_EMAILS (lista separada por vírgula) existir no servidor,
+  // só esses e-mails podem usar as rotas. Sem a env, qualquer usuário logado passa.
+  const permitidos = (process.env.ADMIN_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (permitidos.length && !permitidos.includes((data.user.email || '').toLowerCase())) {
+    const e = new Error('Sem permissão'); e.status = 403; throw e;
+  }
   return data.user;
 }
 

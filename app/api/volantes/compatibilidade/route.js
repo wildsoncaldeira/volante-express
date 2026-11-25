@@ -79,7 +79,12 @@ export async function POST(req) {
         .delete()
         .eq('foto_id', foto_id)
         .not('id', 'in', `(${novosIds.join(',')})`);
-      if (delErr) throw delErr;
+      if (delErr) {
+        // Novo conjunto já está salvo; só a limpeza do antigo falhou. Salvar de novo resolve.
+        return NextResponse.json(
+          { error: 'Salvo, mas não consegui limpar as associações antigas. Clique em salvar de novo.' },
+          { status: 500, headers: noStore });
+      }
     }
 
     return NextResponse.json({ ok: true, salvos: rows.length, ignorada: ignorar }, { headers: noStore });

@@ -19,7 +19,7 @@ app/admin/treinamento/page.js                # a tela (client component)
 Todas as rotas `/api/volantes/*` exigem `Authorization: Bearer <access_token>` (JWT do Supabase
 Auth do app). `requireUser()` valida o token contra o projeto **principal** (`NEXT_PUBLIC_SUPABASE_URL`)
 e retorna 401 se faltar/for inválido. A página manda o token da sessão (`supabase.auth.getSession()`)
-e redireciona pra `/login` se não houver sessão. **Só usuário logado** (o app hoje não tem papel de admin).
+e redireciona pra `/login` se não houver sessão. **Só usuário logado** por padrão. Opcional: defina `ADMIN_EMAILS=a@x.com,b@y.com` no servidor para restringir a esses e-mails (403 para os demais). O token é lido a cada chamada (`getSession()` renova sozinho).
 
 ## Gravação atômica + "irrelevante"
 

@@ -16,7 +16,10 @@ async function lerJson(res) {
 
 export default function TreinamentoVolantes() {
   const router = useRouter();
-  const [token, setToken] = useState(null);
+  const supabase = useMemo(() => createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  ), []);
   const [fotos, setFotos] = useState([]);
   const [indice, setIndice] = useState(0);
   const [carregando, setCarregando] = useState(true);
@@ -34,19 +37,19 @@ export default function TreinamentoVolantes() {
   const buscaRef = useRef(null);
   const timer = useRef(null);
 
+  // Headers com o token ATUAL: getSession() renova o access_token (~1h) sozinho,
+  // então sessões longas de treinamento não caem em "Sessão inválida".
+  const authHeaders = useCallback(async () => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) { router.push('/login'); throw new Error('Sessão expirada. Faça login novamente.'); }
+    return { Authorization: `Bearer ${session.access_token}` };
+  }, [supabase, router]);
+
   // ── sessão + carga inicial ──
   useEffect(() => {
-    const supabase = createBrowserClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    );
     (async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-        if (!session) { router.push('/login'); return; }
-        const tk = session.access_token;
-        setToken(tk);
-        const h = { Authorization: `Bearer ${tk}` };
+        const h = await authHeaders();
         const [rf, rc] = await Promise.all([
           fetch('/api/volantes/fotos', { headers: h }),
           fetch('/api/volantes/compatibilidade', { headers: h }),
@@ -66,7 +69,7 @@ export default function TreinamentoVolantes() {
       finally { setCarregando(false); }
     })();
     return () => clearTimeout(timer.current);
-  }, [router]);
+  }, [authHeaders]);
 
   const foto = fotos[indice];
   const estaIgnorada = foto ? ignoradas.includes(foto.id) : false;
@@ -95,7 +98,10 @@ export default function TreinamentoVolantes() {
     setBusca(''); setAnoMin(''); setAnoMax(''); setSugAberta(false); buscaRef.current?.focus();
   }, [busca, anoMin, anoMax, foto]);
 
-  const proxima = useCallback(() => setIndice((i) => i + 1), []);
+  const proxima = useCallback(() => {
+    clearTimeout(timer.current);
+    setIndice((i) => i + 1);
+  }, []);
 
   async function salvar(linhas, avancar = true) {
     if (!foto) return;
@@ -104,7 +110,7 @@ export default function TreinamentoVolantes() {
     try {
       const res = await fetch('/api/volantes/compatibilidade', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        headers: { 'Content-Type': 'application/json', ...(await authHeaders()) },
         body: JSON.stringify({ foto_id: foto.id, foto_slug: foto.modelo_slug, marca_foto: foto.marca, modelos: linhas }),
       });
       const d = await lerJson(res);
