@@ -1,11 +1,13 @@
 // app/api/admin/bot/route.js
 // Leituras e escritas do painel do bot (bot_config / bot_faqs / bot_regionais /
 // bot_conversations) feitas NO SERVIDOR — o navegador nunca vê a chave do Supabase.
+// Exige ADMIN (allowlist ADMIN_EMAILS obrigatória) e valida toda entrada.
 import { NextResponse } from 'next/server';
-import { botServiceClient, requireUser } from '../../../utils/botSupabase';
+import { botServiceClient, requireAdmin } from '../../../utils/botSupabase';
 
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store' };
+
 const tabelaPorRecurso = {
   config: 'bot_config',
   faqs: 'bot_faqs',
@@ -13,13 +15,23 @@ const tabelaPorRecurso = {
   conversas: 'bot_conversations',
 };
 
+// Só estas chaves de bot_config podem ser gravadas pelo painel.
+const CHAVES_CONFIG = new Set(['photo_caption', 'scarcity_text', 'info_text', 'closing_text']);
+
+const asStr = (v) => (typeof v === 'string' ? v : null);
+const asId = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n > 0 ? n : null;
+};
+const bad = (msg) => NextResponse.json({ error: msg }, { status: 400, headers: noStore });
+
 // GET /api/admin/bot?recurso=config|faqs|regionais|conversas
 export async function GET(req) {
   try {
-    await requireUser(req);
+    await requireAdmin(req);
     const recurso = new URL(req.url).searchParams.get('recurso') || 'config';
     const tabela = tabelaPorRecurso[recurso];
-    if (!tabela) return NextResponse.json({ error: 'recurso inválido' }, { status: 400, headers: noStore });
+    if (!tabela) return bad('recurso inválido');
 
     const supabase = botServiceClient();
     let q = supabase.from(tabela).select('*');
@@ -37,47 +49,71 @@ export async function GET(req) {
 // POST /api/admin/bot  { action, ... }
 export async function POST(req) {
   try {
-    await requireUser(req);
+    await requireAdmin(req);
     const body = await req.json();
     const supabase = botServiceClient();
     const { action } = body;
 
     switch (action) {
       case 'save_config': {
-        const payload = Array.isArray(body.payload) ? body.payload : [];
-        const { error } = await supabase.from('bot_config').upsert(payload, { onConflict: 'key' });
+        const payload = Array.isArray(body.payload) ? body.payload : null;
+        if (!payload || !payload.length) return bad('payload inválido');
+        const linhas = [];
+        for (const item of payload) {
+          const key = asStr(item?.key);
+          const value = asStr(item?.value);
+          if (!key || value === null) return bad('item de config inválido');
+          if (!CHAVES_CONFIG.has(key)) return bad(`chave não permitida: ${key}`);
+          linhas.push({ key, value });
+        }
+        const { error } = await supabase.from('bot_config').upsert(linhas, { onConflict: 'key' });
         if (error) throw error;
         break;
       }
       case 'add_faq': {
-        const { error } = await supabase.from('bot_faqs').insert([{ question: body.question, answer: body.answer }]);
+        const question = asStr(body.question)?.trim();
+        const answer = asStr(body.answer)?.trim();
+        if (!question || !answer) return bad('pergunta e resposta são obrigatórias');
+        const { error } = await supabase.from('bot_faqs').insert([{ question, answer }]);
         if (error) throw error;
         break;
       }
       case 'delete_faq': {
-        const { error } = await supabase.from('bot_faqs').delete().eq('id', body.id);
+        const id = asId(body.id);
+        if (!id) return bad('id inválido');
+        const { error } = await supabase.from('bot_faqs').delete().eq('id', id);
         if (error) throw error;
         break;
       }
       case 'add_regional': {
-        const { error } = await supabase.from('bot_regionais').insert([{
-          city: body.city, attendance_date: body.attendanceDate, region: body.region,
-        }]);
+        const city = asStr(body.city)?.trim();
+        const attendance_date = asStr(body.attendanceDate)?.trim();
+        const region = asStr(body.region)?.trim();
+        if (!city || !attendance_date || !region) return bad('cidade, data e regional são obrigatórias');
+        const { error } = await supabase.from('bot_regionais').insert([{ city, attendance_date, region }]);
         if (error) throw error;
         break;
       }
       case 'delete_regional': {
-        const { error } = await supabase.from('bot_regionais').delete().eq('id', body.id);
+        const id = asId(body.id);
+        if (!id) return bad('id inválido');
+        const { error } = await supabase.from('bot_regionais').delete().eq('id', id);
         if (error) throw error;
         break;
       }
       case 'rate_conversation': {
-        const { error } = await supabase.from('bot_conversations').update({ rating: body.rating }).eq('id', body.id);
+        const id = asId(body.id);
+        if (!id) return bad('id inválido');
+        const rating = body.rating;
+        if (rating === null || rating === undefined || (typeof rating !== 'number' && typeof rating !== 'string')) {
+          return bad('rating inválido');
+        }
+        const { error } = await supabase.from('bot_conversations').update({ rating }).eq('id', id);
         if (error) throw error;
         break;
       }
       default:
-        return NextResponse.json({ error: 'action inválida' }, { status: 400, headers: noStore });
+        return bad('action inválida');
     }
     return NextResponse.json({ ok: true }, { headers: noStore });
   } catch (e) {

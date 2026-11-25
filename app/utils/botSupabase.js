@@ -48,6 +48,21 @@ export async function requireUser(req) {
   return data.user;
 }
 
+// Exige um ADMIN. Além do token válido, ADMIN_EMAILS (CSV) é OBRIGATÓRIA —
+// se não estiver definida no servidor, falha fechado (503). Use nas rotas
+// administrativas que acessam dados com service_role.
+export async function requireAdmin(req) {
+  const user = await requireUser(req);
+  const permitidos = (process.env.ADMIN_EMAILS || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+  if (!permitidos.length) {
+    const e = new Error('ADMIN_EMAILS não configurado no servidor'); e.status = 503; throw e;
+  }
+  if (!permitidos.includes((user.email || '').toLowerCase())) {
+    const e = new Error('Sem permissão'); e.status = 403; throw e;
+  }
+  return user;
+}
+
 export function erroJson(e) {
   return Response.json({ error: e.message || 'Erro interno' }, { status: e.status || 500 });
 }

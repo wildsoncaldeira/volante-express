@@ -31,7 +31,16 @@ e redireciona pra `/login` se não houver sessão. **Só usuário logado** por p
 ## Fila de revisão
 
 Por padrão a fila **oculta as fotos já marcadas como irrelevantes** (não voltam a aparecer).
-O botão **"👁 Mostrar ignoradas"** no topo alterna; a fila é reconstruída e o índice volta ao início.
+O botão **"👁 Mostrar ignoradas"** no topo alterna, mantendo a posição da foto atual.
+
+> Motivo de a fila ser um *estado* (e não `useMemo`): congelada até o toggle, ela evita que a
+> remoção de uma foto marcada na hora desloque o índice e pule a foto seguinte.
+
+## Painel do bot (/api/admin/bot)
+
+As rotas administrativas do painel do bot exigem **`ADMIN_EMAILS`** definida no servidor
+(lista de e-mails separada por vírgula). Sem ela, respondem **503** (falha fechado).
+Defina `ADMIN_EMAILS` **antes** de subir, senão a aba "Bot AI" do painel não carrega.
 
 ## Diferenças vs. o HTML original
 

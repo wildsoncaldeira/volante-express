@@ -38,6 +38,11 @@ export default function AdminPage() {
     );
 
     // Acesso ao painel do bot via API no SERVIDOR — a chave não vai mais ao navegador.
+    const lerJson = async (res) => {
+        const txt = await res.text();
+        try { return JSON.parse(txt); }
+        catch { throw new Error(res.ok ? 'Resposta inválida do servidor' : `HTTP ${res.status}`); }
+    };
     const botAuthHeaders = async () => {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session) { router.push('/login'); throw new Error('Sessão expirada'); }
@@ -49,17 +54,18 @@ export default function AdminPage() {
             headers: { 'Content-Type': 'application/json', ...(await botAuthHeaders()) },
             body: JSON.stringify(payload),
         });
-        const j = await res.json();
+        const j = await lerJson(res);
         if (!res.ok) throw new Error(j.error || 'Erro');
         return j;
     };
+    // Devolve null em falha (NUNCA []), pra não sobrescrever dados com valor vazio.
     const botGet = async (recurso) => {
         try {
             const res = await fetch(`/api/admin/bot?recurso=${recurso}`, { headers: await botAuthHeaders() });
-            const j = await res.json();
+            const j = await lerJson(res);
             if (!res.ok) throw new Error(j.error || 'Erro ao carregar');
-            return j.data || [];
-        } catch (e) { toast.error('Erro ao carregar dados do bot: ' + e.message); return []; }
+            return Array.isArray(j.data) ? j.data : [];
+        } catch (e) { toast.error('Erro ao carregar dados do bot: ' + e.message); return null; }
     };
 
     const [activeTab, setActiveTab] = useState('dashboard');
@@ -155,6 +161,7 @@ export default function AdminPage() {
     const [botScarcityText, setBotScarcityText] = useState('');
     const [botInfoText, setBotInfoText] = useState('');
     const [botClosingText, setBotClosingText] = useState('');
+    const [botScriptReady, setBotScriptReady] = useState(false);
     const [botFaqs, setBotFaqs] = useState([]);
     const [botRegionais, setBotRegionais] = useState([]);
     const [botConversations, setBotConversations] = useState([]);
@@ -344,20 +351,24 @@ export default function AdminPage() {
     async function fetchBotData() {
         if (activeBotTab === 'script') {
             const data = await botGet('config');
-            if (data) {
+            if (Array.isArray(data)) {
                 setBotPhotoCaption(data.find(d => d.key === 'photo_caption')?.value || '');
                 setBotScarcityText(data.find(d => d.key === 'scarcity_text')?.value || '');
                 setBotInfoText(data.find(d => d.key === 'info_text')?.value || '');
                 setBotClosingText(data.find(d => d.key === 'closing_text')?.value || '');
+                setBotScriptReady(true);
+            } else {
+                setBotScriptReady(false); // não deixa salvar por cima com campos vazios
             }
         } else if (activeBotTab === 'faq') {
             const data = await botGet('faqs');
-            setBotFaqs(data || []);
+            if (Array.isArray(data)) setBotFaqs(data);
         } else if (activeBotTab === 'regionais') {
             const data = await botGet('regionais');
-            setBotRegionais(data || []);
+            if (Array.isArray(data)) setBotRegionais(data);
         } else if (activeBotTab === 'conversas') {
             const data = await botGet('conversas');
+            if (!Array.isArray(data)) return;
             const grouped = {};
             (data || []).forEach(msg => {
                 if (!grouped[msg.contact_id]) grouped[msg.contact_id] = [];
@@ -2017,7 +2028,7 @@ export default function AdminPage() {
                                                 <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botClosingText} onChange={e => setBotClosingText(e.target.value)} />
                                             </div>
 
-                                            <button onClick={handleSaveBotScript} className="bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center gap-2">
+                                            <button onClick={handleSaveBotScript} disabled={!botScriptReady} title={!botScriptReady ? 'Aguardando carregar as configurações atuais' : ''} className="bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <Save size={18} /> Salvar Configurações
                                             </button>
                                         </div>
