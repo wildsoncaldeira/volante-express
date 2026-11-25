@@ -11,6 +11,23 @@
 export const normCidade = (s) =>
   (s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
 
+// Abreviações comuns em nome de cidade → forma completa.
+const ABREV = {
+  sto: "santo", sta: "santa", "s": "sao", sao: "sao", pe: "padre", dr: "doutor",
+  "st": "santo", "s.": "sao",
+};
+
+// Chave de comparação de cidade: normaliza, tira parênteses e expande abreviação.
+export function chaveCidade(s) {
+  let t = normCidade(s).replace(/\([^)]*\)/g, " ");
+  t = t
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => ABREV[w.replace(/\.+$/, "")] || w)
+    .join(" ");
+  return t.replace(/\s+/g, " ").trim();
+}
+
 export function parseAgendaTexto(texto) {
   const itens = [];
   const invalidas = [];

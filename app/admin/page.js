@@ -2120,7 +2120,7 @@ export default function AdminPage() {
                                         <div className="space-y-4">
                                             <div className="bg-white border border-gray-100 rounded-2xl p-5">
                                                 <h3 className="font-bold text-slate-800 mb-1">Agenda das regionais</h3>
-                                                <p className="text-xs text-slate-500 mb-3">Cole <b>uma linha por cidade</b>, no formato <b>Cidade dd/mm</b> (ex.: <code>Divinópolis 27/11</code>). Também aceita <code>dd/mm/aaaa</code>. A data vira o dia do atendimento daquela cidade.</p>
+                                                <p className="text-xs text-slate-500 mb-3">Cole <b>uma linha por data</b>, no formato <b>Cidade dd/mm</b> (ex.: <code>Divinópolis 05/12</code>). A <b>mesma cidade pode ter várias datas</b> — todas são guardadas. Também aceita <code>dd/mm/aaaa</code>.</p>
                                                 <textarea className="w-full h-40 p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-mono text-slate-700 outline-none focus:border-blue-500"
                                                     value={agendaTexto} onChange={e => setAgendaTexto(e.target.value)}
                                                     placeholder={"Divinópolis 27/11\nSete Lagoas 26/11\nPedro Leopoldo 30/11"} />
@@ -2132,14 +2132,19 @@ export default function AdminPage() {
                                                 </div>
                                             </div>
                                             <div className="bg-white border border-gray-100 rounded-2xl p-5">
-                                                <h3 className="font-bold text-slate-800 mb-3">Cidades e datas ({botCalendarios.length})</h3>
-                                                <div className="grid md:grid-cols-3 gap-2">
-                                                    {botCalendarios.map(c => (
-                                                        <div key={c.city} className="flex justify-between items-center text-sm border border-slate-100 rounded-lg px-3 py-2">
-                                                            <span className="text-slate-700">{c.city}</span>
-                                                            <span className={'font-mono ' + (c.attendance_date ? 'text-emerald-600' : 'text-slate-400')}>{c.attendance_date || '—'}</span>
-                                                        </div>
-                                                    ))}
+                                                <h3 className="font-bold text-slate-800 mb-3">Cidades e datas ({botCalendarios.filter(c => Array.isArray(c.attendance_dates) && c.attendance_dates.length).length}/{botCalendarios.length} com data)</h3>
+                                                <div className="grid md:grid-cols-2 gap-2">
+                                                    {botCalendarios.map(c => {
+                                                        const ds = Array.isArray(c.attendance_dates) && c.attendance_dates.length
+                                                            ? c.attendance_dates.map(d => d.slice(8, 10) + '/' + d.slice(5, 7)).join(', ')
+                                                            : (c.attendance_date ? c.attendance_date.slice(8, 10) + '/' + c.attendance_date.slice(5, 7) : null);
+                                                        return (
+                                                            <div key={c.city} className="flex justify-between items-start gap-3 text-sm border border-slate-100 rounded-lg px-3 py-2">
+                                                                <span className="text-slate-700 shrink-0">{c.city}</span>
+                                                                <span className={'font-mono text-right ' + (ds ? 'text-emerald-600' : 'text-slate-400')}>{ds || 'sem data'}</span>
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         </div>
