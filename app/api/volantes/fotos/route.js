@@ -1,38 +1,31 @@
 // app/api/volantes/fotos/route.js
 // Lista as fotos de volantes (Supabase do bot) por ordem de prioridade.
-// Roda no SERVIDOR — a service_role NUNCA vai para o cliente.
+// Roda no SERVIDOR — a service_role NUNCA vai para o cliente. Exige usuário autenticado.
 import { NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { calcularPrioridade } from '../../utils/volantesData';
+import { calcularPrioridade } from '../../../utils/volantesData';
+import { botServiceClient, requireUser } from '../../../utils/botSupabase';
 
 export const dynamic = 'force-dynamic';
+const noStore = { 'Cache-Control': 'no-store' };
 
-function botClient() {
-  const url = process.env.SUPABASE_BOT_URL;
-  const key = process.env.SUPABASE_BOT_SERVICE_KEY;
-  if (!url || !key) {
-    throw new Error('Defina SUPABASE_BOT_URL e SUPABASE_BOT_SERVICE_KEY no servidor (.env).');
-  }
-  return createClient(url, key, { auth: { persistSession: false } });
-}
-
-export async function GET() {
+export async function GET(req) {
   try {
-    const supabase = botClient();
+    await requireUser(req);
+    const supabase = botServiceClient();
     const { data, error } = await supabase
       .from('volantes_fotos')
       .select('id,marca,modelo,modelo_slug,url')
       .order('marca', { ascending: true })
       .order('modelo_slug', { ascending: true })
-      .limit(5000);
+      .limit(5000); // hoje ~374 linhas; limite alto só como trava de segurança
     if (error) throw error;
 
     const fotos = (data || [])
       .map((f) => ({ ...f, _prio: calcularPrioridade(f) }))
       .sort((a, b) => b._prio - a._prio);
 
-    return NextResponse.json({ fotos, total: fotos.length });
+    return NextResponse.json({ fotos, total: fotos.length }, { headers: noStore });
   } catch (e) {
-    return NextResponse.json({ error: e.message }, { status: 500 });
+    return NextResponse.json({ error: e.message }, { status: e.status || 500, headers: noStore });
   }
 }

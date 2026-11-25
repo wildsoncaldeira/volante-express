@@ -1,60 +1,83 @@
 'use client';
 // app/admin/treinamento/page.js
 // Tela de Treinamento de Fotos — reconstrução da ferramenta HTML, server-side.
-// Nenhuma chave do Supabase no cliente: tudo via /api/volantes/*.
+// Nenhuma chave do Supabase no cliente: usa o token de sessão + /api/volantes/*.
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import { createBrowserClient } from '@supabase/ssr';
 import { MODELOS, badgePrioridade } from '../../utils/volantesData';
 
+// Lê JSON tratando resposta não-JSON (HTML de erro do Next, 404, etc.)
+async function lerJson(res) {
+  const txt = await res.text();
+  try { return JSON.parse(txt); }
+  catch { throw new Error(res.ok ? 'Resposta inválida do servidor' : `HTTP ${res.status}`); }
+}
+
 export default function TreinamentoVolantes() {
+  const router = useRouter();
+  const [token, setToken] = useState(null);
   const [fotos, setFotos] = useState([]);
   const [indice, setIndice] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
-  const [modelos, setModelos] = useState([]);        // selecionados nesta foto
+  const [modelos, setModelos] = useState([]);
   const [busca, setBusca] = useState('');
   const [sugAberta, setSugAberta] = useState(false);
   const [anoMin, setAnoMin] = useState('');
   const [anoMax, setAnoMax] = useState('');
-  const [assoc, setAssoc] = useState({});             // { foto_id: {modelos} } já salvos
+  const [assoc, setAssoc] = useState({});
+  const [ignoradas, setIgnoradas] = useState([]);
   const [copiarId, setCopiarId] = useState('');
   const [msg, setMsg] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const buscaRef = useRef(null);
+  const timer = useRef(null);
 
-  // ── carrega fotos + associações existentes ──
+  // ── sessão + carga inicial ──
   useEffect(() => {
+    const supabase = createBrowserClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    );
     (async () => {
       try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { router.push('/login'); return; }
+        const tk = session.access_token;
+        setToken(tk);
+        const h = { Authorization: `Bearer ${tk}` };
         const [rf, rc] = await Promise.all([
-          fetch('/api/volantes/fotos'),
-          fetch('/api/volantes/compatibilidade'),
+          fetch('/api/volantes/fotos', { headers: h }),
+          fetch('/api/volantes/compatibilidade', { headers: h }),
         ]);
-        const df = await rf.json();
-        const dc = await rc.json();
+        const df = await lerJson(rf);
+        const dc = await lerJson(rc);
         if (!rf.ok) throw new Error(df.error || 'Erro ao carregar fotos');
         if (!rc.ok) throw new Error(dc.error || 'Erro ao carregar associações');
         setFotos(df.fotos || []);
         const map = {};
         for (const [fid, linhas] of Object.entries(dc.porFoto || {})) {
-          map[fid] = linhas.map((r) => ({
-            modelo: r.modelo_cliente, marca: r.marca_foto, anoMin: r.ano_min, anoMax: r.ano_max,
-          }));
+          map[fid] = linhas.map((r) => ({ modelo: r.modelo_cliente, marca: r.marca_foto, anoMin: r.ano_min, anoMax: r.ano_max }));
         }
         setAssoc(map);
+        setIgnoradas(dc.ignoradas || []);
       } catch (e) { setErro(e.message); }
       finally { setCarregando(false); }
     })();
-  }, []);
+    return () => clearTimeout(timer.current);
+  }, [router]);
 
   const foto = fotos[indice];
+  const estaIgnorada = foto ? ignoradas.includes(foto.id) : false;
 
-  // Pré-carrega os modelos já salvos quando entra numa foto
+  // Pré-carrega os modelos da foto (depois da carga e a cada troca de foto)
   useEffect(() => {
-    if (!foto) return;
+    if (carregando || !foto) return;
     setModelos(assoc[foto.id] ? assoc[foto.id].map((m) => ({ ...m })) : []);
     setBusca(''); setAnoMin(''); setAnoMax(''); setCopiarId(''); setMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indice, fotos.length]);
+  }, [indice, carregando]);
 
   const sugestoes = useMemo(() => {
     const q = busca.toLowerCase().trim();
@@ -72,22 +95,31 @@ export default function TreinamentoVolantes() {
     setBusca(''); setAnoMin(''); setAnoMax(''); setSugAberta(false); buscaRef.current?.focus();
   }, [busca, anoMin, anoMax, foto]);
 
-  const proxima = () => setIndice((i) => i + 1);
+  const proxima = useCallback(() => setIndice((i) => i + 1), []);
 
-  async function salvar(linhas) {
+  async function salvar(linhas, avancar = true) {
     if (!foto) return;
     if (!linhas.length) { setMsg({ t: 'err', m: 'Adicione pelo menos um modelo.' }); return; }
     setSalvando(true); setMsg(null);
     try {
       const res = await fetch('/api/volantes/compatibilidade', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
         body: JSON.stringify({ foto_id: foto.id, foto_slug: foto.modelo_slug, marca_foto: foto.marca, modelos: linhas }),
       });
-      const d = await res.json();
+      const d = await lerJson(res);
       if (!res.ok) throw new Error(d.error || 'Erro ao salvar');
-      setAssoc((prev) => ({ ...prev, [foto.id]: linhas }));
-      setMsg({ t: 'ok', m: `Salvo (${d.salvos})` });
-      setTimeout(proxima, 350);
+
+      if (d.ignorada) {
+        setIgnoradas((prev) => (prev.includes(foto.id) ? prev : [...prev, foto.id]));
+        setAssoc((prev) => { const c = { ...prev }; delete c[foto.id]; return c; });
+        setMsg({ t: 'ok', m: 'Marcada como irrelevante' });
+      } else {
+        setAssoc((prev) => ({ ...prev, [foto.id]: linhas }));
+        setIgnoradas((prev) => prev.filter((id) => id !== foto.id));
+        setMsg({ t: 'ok', m: `Salvo (${d.salvos})` });
+      }
+      if (avancar) { clearTimeout(timer.current); timer.current = setTimeout(proxima, 350); }
     } catch (e) { setMsg({ t: 'err', m: e.message }); }
     finally { setSalvando(false); }
   }
@@ -105,29 +137,28 @@ export default function TreinamentoVolantes() {
   if (!foto) return <div className="p-10 text-slate-400">🎉 Todas as fotos revisadas!</div>;
 
   const badge = badgePrioridade(foto._prio);
-  const salvas = Object.keys(assoc).length;
+  const revisados = Object.keys(assoc).length + ignoradas.length;
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-slate-200">
       <header className="bg-[#1a3270] border-b border-slate-700 px-6 py-3 flex items-center justify-between">
         <h1 className="text-[15px] font-semibold">🎯 Treinamento de Fotos — Volante Express</h1>
         <span className="text-xs text-slate-400 bg-white/10 px-3 py-1 rounded-full">
-          {indice + 1} / {fotos.length} · {salvas} salvos
+          {indice + 1} / {fotos.length} · {revisados} revisados
         </span>
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid md:grid-cols-[340px_1fr] gap-6">
-        {/* Foto */}
         <div className="relative rounded-xl overflow-hidden bg-[#161b22] border border-slate-700 aspect-square">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={foto.url} alt="Volante" className="w-full h-full object-cover" />
           <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded ${badge.classe}`}>{badge.texto}</span>
+          {estaIgnorada && <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded bg-red-600 text-white">IGNORADA</span>}
           <span className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 to-transparent px-3 pt-6 pb-2 text-[11px] font-mono text-white/70">
             {foto.marca} / {foto.modelo_slug}
           </span>
         </div>
 
-        {/* Painel */}
         <div className="flex flex-col gap-4">
           <div>
             <span className="text-[11px] uppercase tracking-wide text-slate-400 block mb-2">Modelos compatíveis com esta foto</span>
@@ -144,7 +175,6 @@ export default function TreinamentoVolantes() {
             </div>
           </div>
 
-          {/* Copiar */}
           <div className="bg-purple-500/10 border border-purple-500/30 rounded-lg p-3">
             <span className="text-[11px] uppercase tracking-wide text-purple-300 block mb-2">⚡ Copiar modelos de uma foto já treinada</span>
             <div className="flex gap-2">
@@ -154,7 +184,6 @@ export default function TreinamentoVolantes() {
             </div>
           </div>
 
-          {/* Adicionar */}
           <div className="bg-[#161b22] border border-slate-700 rounded-lg p-3 flex flex-col gap-2.5">
             <span className="text-[11px] uppercase tracking-wide text-slate-400">+ Adicionar modelo manualmente</span>
             <div className="relative">
@@ -184,12 +213,11 @@ export default function TreinamentoVolantes() {
 
           {msg && <div className={`text-sm ${msg.t === 'ok' ? 'text-emerald-400' : 'text-red-400'}`}>{msg.m}</div>}
 
-          {/* Ações */}
           <div className="flex flex-col gap-2">
             <button disabled={salvando} onClick={() => salvar(modelos)}
               className="w-full bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-black font-semibold rounded-md py-3">✓ Salvar e próxima</button>
-            <button onClick={() => { salvar([{ modelo: 'IGNORAR', marca: '', anoMin: null, anoMax: null }]); }}
-              className="w-full border border-slate-700 text-slate-400 rounded-md py-2.5 text-sm hover:text-slate-200">✗ Não é volante / irrelevante</button>
+            <button disabled={salvando} onClick={() => salvar([{ modelo: 'IGNORAR', marca: '', anoMin: null, anoMax: null }])}
+              className="w-full border border-red-500/50 text-red-400 rounded-md py-2.5 text-sm hover:bg-red-500/10">✗ Não é volante / irrelevante</button>
             <button onClick={proxima} className="w-full border border-slate-700 text-slate-400 rounded-md py-2.5 text-sm hover:text-slate-200">→ Pular esta foto</button>
           </div>
         </div>

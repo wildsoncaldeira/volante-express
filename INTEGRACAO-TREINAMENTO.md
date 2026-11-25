@@ -2,16 +2,31 @@
 
 Reconstrução da ferramenta `treinamento-volantes.html`, porém **sem chave no cliente**.
 Gerada em 25/11/2026 · base: `/home/ubuntu/apps/volante-bot-build/volante-express/`
-**Nada foi commitado nem deployado.** Copie os arquivos abaixo para o repo real.
+Entregue como **PR #1** (branch `feature/tela-treinamento-volantes`).
 
 ## Arquivos criados (relativos a `volante-express/`)
 
 ```
 app/utils/volantesData.js                    # dados (MODELOS, FREQ_*) + calcularPrioridade()
+app/utils/botSupabase.js                     # clientes server-side + requireUser() + IGNORAR
 app/api/volantes/fotos/route.js              # GET  → lista volantes_fotos por prioridade
 app/api/volantes/compatibilidade/route.js    # GET  → associações; POST → salva por foto
 app/admin/treinamento/page.js                # a tela (client component)
 ```
+
+## Autenticação
+
+Todas as rotas `/api/volantes/*` exigem `Authorization: Bearer <access_token>` (JWT do Supabase
+Auth do app). `requireUser()` valida o token contra o projeto **principal** (`NEXT_PUBLIC_SUPABASE_URL`)
+e retorna 401 se faltar/for inválido. A página manda o token da sessão (`supabase.auth.getSession()`)
+e redireciona pra `/login` se não houver sessão. **Só usuário logado** (o app hoje não tem papel de admin).
+
+## Gravação atômica + "irrelevante"
+
+- O `POST` **insere primeiro** o novo conjunto e só depois apaga as linhas antigas que não estão nele
+  (se o insert falhar, nada é perdido).
+- Marcar "não é volante / irrelevante" grava a sentinela `modelo_cliente = '__IGNORAR__'`.
+  **O bot/MCP deve ignorar linhas com `modelo_cliente = '__IGNORAR__'`.**
 
 ## Diferenças vs. o HTML original
 
@@ -48,5 +63,7 @@ Sem essas duas o `GET` responde 500 com mensagem clara.
 
 ## Pendências relacionadas (segurança)
 
-- ⚠️ O `treinamento-volantes (2).html` e o `app/admin/page.js` atual têm a **service_role hardcoded**.
-  Migrar o admin para o padrão server-side (rotas `/api/*`) e **rotacionar a chave**.
+- ⚠️ O `treinamento-volantes (2).html` original tem a **`service_role` hardcoded** → **rotacionar** aquela chave.
+- O `app/admin/page.js` de produção usa a chave **`anon`** (claim `role: anon`), não `service_role`.
+  Uma `anon` no cliente é normal; o risco depende das **RLS** do projeto do bot — vale conferir.
+  (Correção: a versão anterior deste doc dizia "service_role" no admin — era **incorreto**.)
