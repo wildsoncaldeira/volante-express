@@ -21,6 +21,8 @@ export default function TreinamentoVolantes() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ), []);
   const [fotos, setFotos] = useState([]);
+  const [fila, setFila] = useState([]);              // fila exibida (pode ocultar as ignoradas)
+  const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
   const [indice, setIndice] = useState(0);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -58,20 +60,23 @@ export default function TreinamentoVolantes() {
         const dc = await lerJson(rc);
         if (!rf.ok) throw new Error(df.error || 'Erro ao carregar fotos');
         if (!rc.ok) throw new Error(dc.error || 'Erro ao carregar associações');
-        setFotos(df.fotos || []);
+        const todas = df.fotos || [];
+        const ign = dc.ignoradas || [];
+        setFotos(todas);
+        setIgnoradas(ign);
+        setFila(todas.filter((f) => !ign.includes(f.id))); // por padrão esconde as já marcadas como irrelevantes
         const map = {};
         for (const [fid, linhas] of Object.entries(dc.porFoto || {})) {
           map[fid] = linhas.map((r) => ({ modelo: r.modelo_cliente, marca: r.marca_foto, anoMin: r.ano_min, anoMax: r.ano_max }));
         }
         setAssoc(map);
-        setIgnoradas(dc.ignoradas || []);
       } catch (e) { setErro(e.message); }
       finally { setCarregando(false); }
     })();
     return () => clearTimeout(timer.current);
   }, [authHeaders]);
 
-  const foto = fotos[indice];
+  const foto = fila[indice];
   const estaIgnorada = foto ? ignoradas.includes(foto.id) : false;
 
   // Pré-carrega os modelos da foto (depois da carga e a cada troca de foto)
@@ -102,6 +107,14 @@ export default function TreinamentoVolantes() {
     clearTimeout(timer.current);
     setIndice((i) => i + 1);
   }, []);
+
+  // Alterna entre mostrar/ocultar da fila as fotos já marcadas como irrelevantes
+  const alternarIgnoradas = () => {
+    const novo = !mostrarIgnoradas;
+    setMostrarIgnoradas(novo);
+    setFila(fotos.filter((f) => novo || !ignoradas.includes(f.id)));
+    setIndice(0);
+  };
 
   async function salvar(linhas, avancar = true) {
     if (!foto) return;
@@ -149,9 +162,14 @@ export default function TreinamentoVolantes() {
     <div className="min-h-screen bg-[#0d1117] text-slate-200">
       <header className="bg-[#1a3270] border-b border-slate-700 px-6 py-3 flex items-center justify-between">
         <h1 className="text-[15px] font-semibold">🎯 Treinamento de Fotos — Volante Express</h1>
-        <span className="text-xs text-slate-400 bg-white/10 px-3 py-1 rounded-full">
-          {indice + 1} / {fotos.length} · {revisados} revisados
-        </span>
+        <div className="flex items-center gap-3">
+          <button onClick={alternarIgnoradas} className="text-xs text-slate-300 border border-slate-600 rounded-full px-3 py-1 hover:bg-white/10">
+            {mostrarIgnoradas ? '🙈 Ocultar ignoradas' : '👁 Mostrar ignoradas'}
+          </button>
+          <span className="text-xs text-slate-400 bg-white/10 px-3 py-1 rounded-full">
+            {indice + 1} / {fila.length} · {revisados} revisados
+          </span>
+        </div>
       </header>
 
       <main className="max-w-6xl mx-auto p-6 grid md:grid-cols-[340px_1fr] gap-6">

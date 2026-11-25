@@ -28,6 +28,11 @@ e redireciona pra `/login` se não houver sessão. **Só usuário logado** por p
 - Marcar "não é volante / irrelevante" grava a sentinela `modelo_cliente = '__IGNORAR__'`.
   **O bot/MCP deve ignorar linhas com `modelo_cliente = '__IGNORAR__'`.**
 
+## Fila de revisão
+
+Por padrão a fila **oculta as fotos já marcadas como irrelevantes** (não voltam a aparecer).
+O botão **"👁 Mostrar ignoradas"** no topo alterna; a fila é reconstruída e o índice volta ao início.
+
 ## Diferenças vs. o HTML original
 
 | HTML original | Reconstrução |
