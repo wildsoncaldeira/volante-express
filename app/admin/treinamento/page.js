@@ -109,11 +109,15 @@ export default function TreinamentoVolantes() {
   }, []);
 
   // Alterna entre mostrar/ocultar da fila as fotos já marcadas como irrelevantes
+  // (mantém a posição da foto atual, se ela continuar visível).
   const alternarIgnoradas = () => {
     const novo = !mostrarIgnoradas;
+    const atualId = fila[indice]?.id;
+    const nova = fotos.filter((f) => novo || !ignoradas.includes(f.id));
     setMostrarIgnoradas(novo);
-    setFila(fotos.filter((f) => novo || !ignoradas.includes(f.id)));
-    setIndice(0);
+    setFila(nova);
+    const pos = nova.findIndex((f) => f.id === atualId);
+    setIndice(pos >= 0 ? pos : 0);
   };
 
   async function salvar(linhas, avancar = true) {

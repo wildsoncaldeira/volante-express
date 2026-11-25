@@ -1,7 +1,6 @@
 'use client';
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { createBrowserClient } from '@supabase/ssr';
-import { createClient } from '@supabase/supabase-js';
 import { useRouter } from 'next/navigation';
 import {
     TrendingDown, Filter, Settings, Trash2, Banknote, Calendar,
@@ -37,10 +36,37 @@ export default function AdminPage() {
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     );
-    const botSupabase = useMemo(() => createClient(
-        'https://sgijvaejapabhivkhwwl.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNnaWp2YWVqYXBhYmhpdmtod3dsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODU5NDg5MDksImV4cCI6MjEwMTUyNDkwOX0.juKcQRgUBcJuZaYaM9wao0nK-QqukvKM2GObf09meTs'
-    ), []);
+
+    // Acesso ao painel do bot via API no SERVIDOR — a chave não vai mais ao navegador.
+    const lerJson = async (res) => {
+        const txt = await res.text();
+        try { return JSON.parse(txt); }
+        catch { throw new Error(res.ok ? 'Resposta inválida do servidor' : `HTTP ${res.status}`); }
+    };
+    const botAuthHeaders = async () => {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) { router.push('/login'); throw new Error('Sessão expirada'); }
+        return { Authorization: `Bearer ${session.access_token}` };
+    };
+    const botAction = async (payload) => {
+        const res = await fetch('/api/admin/bot', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(await botAuthHeaders()) },
+            body: JSON.stringify(payload),
+        });
+        const j = await lerJson(res);
+        if (!res.ok) throw new Error(j.error || 'Erro');
+        return j;
+    };
+    // Devolve null em falha (NUNCA []), pra não sobrescrever dados com valor vazio.
+    const botGet = async (recurso) => {
+        try {
+            const res = await fetch(`/api/admin/bot?recurso=${recurso}`, { headers: await botAuthHeaders() });
+            const j = await lerJson(res);
+            if (!res.ok) throw new Error(j.error || 'Erro ao carregar');
+            return Array.isArray(j.data) ? j.data : [];
+        } catch (e) { toast.error('Erro ao carregar dados do bot: ' + e.message); return null; }
+    };
 
     const [activeTab, setActiveTab] = useState('dashboard');
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -135,6 +161,7 @@ export default function AdminPage() {
     const [botScarcityText, setBotScarcityText] = useState('');
     const [botInfoText, setBotInfoText] = useState('');
     const [botClosingText, setBotClosingText] = useState('');
+    const [botScriptReady, setBotScriptReady] = useState(false);
     const [botFaqs, setBotFaqs] = useState([]);
     const [botRegionais, setBotRegionais] = useState([]);
     const [botConversations, setBotConversations] = useState([]);
@@ -323,21 +350,25 @@ export default function AdminPage() {
 
     async function fetchBotData() {
         if (activeBotTab === 'script') {
-            const { data } = await botSupabase.from('bot_config').select('*');
-            if (data) {
+            const data = await botGet('config');
+            if (Array.isArray(data)) {
                 setBotPhotoCaption(data.find(d => d.key === 'photo_caption')?.value || '');
                 setBotScarcityText(data.find(d => d.key === 'scarcity_text')?.value || '');
                 setBotInfoText(data.find(d => d.key === 'info_text')?.value || '');
                 setBotClosingText(data.find(d => d.key === 'closing_text')?.value || '');
+                setBotScriptReady(true);
+            } else {
+                setBotScriptReady(false); // não deixa salvar por cima com campos vazios
             }
         } else if (activeBotTab === 'faq') {
-            const { data } = await botSupabase.from('bot_faqs').select('*').order('created_at', { ascending: true });
-            setBotFaqs(data || []);
+            const data = await botGet('faqs');
+            if (Array.isArray(data)) setBotFaqs(data);
         } else if (activeBotTab === 'regionais') {
-            const { data } = await botSupabase.from('bot_regionais').select('*').order('region', { ascending: true });
-            setBotRegionais(data || []);
+            const data = await botGet('regionais');
+            if (Array.isArray(data)) setBotRegionais(data);
         } else if (activeBotTab === 'conversas') {
-            const { data } = await botSupabase.from('bot_conversations').select('*').order('created_at', { ascending: false }).limit(200);
+            const data = await botGet('conversas');
+            if (!Array.isArray(data)) return;
             const grouped = {};
             (data || []).forEach(msg => {
                 if (!grouped[msg.contact_id]) grouped[msg.contact_id] = [];
@@ -376,7 +407,7 @@ export default function AdminPage() {
         if (activeTab === 'bot') {
             fetchBotData();
         }
-    }, [activeTab, activeBotTab, botSupabase]);
+    }, [activeTab, activeBotTab]);
 
     // Bot Handlers
     async function handleSaveBotScript() {
@@ -386,7 +417,8 @@ export default function AdminPage() {
             { key: 'info_text', value: botInfoText },
             { key: 'closing_text', value: botClosingText }
         ];
-        const { error } = await botSupabase.from('bot_config').upsert(payload, { onConflict: 'key' });
+        let error = null;
+        try { await botAction({ action: 'save_config', payload }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao salvar script: ' + error.message);
         else toast.success('Configurações do bot salvas!');
     }
@@ -396,14 +428,16 @@ export default function AdminPage() {
         const q = e.target.question.value;
         const a = e.target.answer.value;
         if (!q || !a) return toast.error('Preencha os dois campos');
-        const { error } = await botSupabase.from('bot_faqs').insert([{ question: q, answer: a }]);
+        let error = null;
+        try { await botAction({ action: 'add_faq', question: q, answer: a }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao adicionar FAQ: ' + error.message);
         else { toast.success('FAQ adicionado!'); e.target.reset(); fetchBotData(); }
     }
 
     async function handleDeleteFaq(id) {
         if (!confirm('Excluir pergunta frequente?')) return;
-        const { error } = await botSupabase.from('bot_faqs').delete().eq('id', id);
+        let error = null;
+        try { await botAction({ action: 'delete_faq', id }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao excluir FAQ: ' + error.message);
         if (!error) fetchBotData();
     }
@@ -414,14 +448,16 @@ export default function AdminPage() {
         const date = e.target.date.value;
         const region = e.target.region.value;
         if (!city || !date || !region) return toast.error('Preencha todos os campos');
-        const { error } = await botSupabase.from('bot_regionais').insert([{ city, attendance_date: date, region }]);
+        let error = null;
+        try { await botAction({ action: 'add_regional', city, attendanceDate: date, region }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao adicionar Regional: ' + error.message);
         else { toast.success('Regional adicionada!'); e.target.reset(); fetchBotData(); }
     }
 
     async function handleDeleteRegional(id) {
         if (!confirm('Excluir cidade?')) return;
-        const { error } = await botSupabase.from('bot_regionais').delete().eq('id', id);
+        let error = null;
+        try { await botAction({ action: 'delete_regional', id }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao excluir Regional: ' + error.message);
         if (!error) fetchBotData();
     }
@@ -480,7 +516,8 @@ export default function AdminPage() {
     }
 
     async function handleRateConversation(msgId, rating) {
-        const { error } = await botSupabase.from('bot_conversations').update({ rating }).eq('id', msgId);
+        let error = null;
+        try { await botAction({ action: 'rate_conversation', id: msgId, rating }); } catch (e) { error = e; }
         if (error) toast.error('Erro ao avaliar');
         else fetchBotData();
     }
@@ -1991,7 +2028,7 @@ export default function AdminPage() {
                                                 <textarea className="w-full h-24 p-4 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium text-slate-700 outline-none focus:border-blue-500" value={botClosingText} onChange={e => setBotClosingText(e.target.value)} />
                                             </div>
 
-                                            <button onClick={handleSaveBotScript} className="bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center gap-2">
+                                            <button onClick={handleSaveBotScript} disabled={!botScriptReady} title={!botScriptReady ? 'Aguardando carregar as configurações atuais' : ''} className="bg-blue-600 text-white font-bold py-2.5 px-6 rounded-xl text-sm hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed">
                                                 <Save size={18} /> Salvar Configurações
                                             </button>
                                         </div>
