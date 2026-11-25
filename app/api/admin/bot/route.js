@@ -4,6 +4,7 @@
 // Exige ADMIN (allowlist ADMIN_EMAILS obrigatória) e valida toda entrada.
 import { NextResponse } from 'next/server';
 import { botServiceClient, requireAdmin } from '../../../utils/botSupabase';
+import { parseAgendaTexto, paraISO, normCidade } from '../../../utils/agendaTexto';
 
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store' };
@@ -13,6 +14,7 @@ const tabelaPorRecurso = {
   faqs: 'bot_faqs',
   regionais: 'bot_regionais',
   conversas: 'bot_conversations',
+  calendarios: 'bot_calendars',
 };
 
 // Só estas chaves de bot_config podem ser gravadas pelo painel.
@@ -37,6 +39,7 @@ export async function GET(req) {
     let q = supabase.from(tabela).select('*');
     if (recurso === 'faqs') q = q.order('created_at', { ascending: true });
     if (recurso === 'regionais') q = q.order('region', { ascending: true });
+    if (recurso === 'calendarios') q = q.order('city', { ascending: true });
     if (recurso === 'conversas') q = q.order('created_at', { ascending: false }).limit(200);
     const { data, error } = await q;
     if (error) throw error;
@@ -111,6 +114,29 @@ export async function POST(req) {
         const { error } = await supabase.from('bot_conversations').update({ rating }).eq('id', id);
         if (error) throw error;
         break;
+      }
+      case 'save_agenda': {
+        // Recebe o texto colado no painel, ex.: "Divinópolis 27/11\nSete Lagoas 26/11"
+        const texto = asStr(body.texto);
+        if (!texto) return bad('texto vazio');
+        const { itens, invalidas } = parseAgendaTexto(texto);
+        const { data: cals, error: eCals } = await supabase.from('bot_calendars').select('city, calendar_id');
+        if (eCals) throw eCals;
+        const porNorm = new Map((cals || []).map((c) => [normCidade(c.city), c]));
+        const aplicados = [];
+        const naoEncontrados = [];
+        for (const it of itens) {
+          const alvo = porNorm.get(normCidade(it.cidade));
+          if (!alvo) { naoEncontrados.push(it.linha); continue; }
+          const iso = paraISO(it);
+          const { error } = await supabase
+            .from('bot_calendars')
+            .update({ attendance_date: iso })
+            .eq('city', alvo.city);
+          if (error) throw error;
+          aplicados.push({ city: alvo.city, date: iso });
+        }
+        return NextResponse.json({ ok: true, aplicados, naoEncontrados, invalidas }, { headers: noStore });
       }
       default:
         return bad('action inválida');
