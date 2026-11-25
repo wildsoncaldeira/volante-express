@@ -4,7 +4,7 @@
 // Exige ADMIN (allowlist ADMIN_EMAILS obrigatória) e valida toda entrada.
 import { NextResponse } from 'next/server';
 import { botServiceClient, requireAdmin } from '../../../utils/botSupabase';
-import { parseAgendaTexto, paraISO, normCidade } from '../../../utils/agendaTexto';
+import { parseAgendaTexto, paraISO, chaveCidade } from '../../../utils/agendaTexto';
 
 export const dynamic = 'force-dynamic';
 const noStore = { 'Cache-Control': 'no-store' };
@@ -116,25 +116,37 @@ export async function POST(req) {
         break;
       }
       case 'save_agenda': {
-        // Recebe o texto colado no painel, ex.: "Divinópolis 27/11\nSete Lagoas 26/11"
+        // Recebe o texto colado no painel, ex.: "Divinópolis 05/12\nDivinópolis 12/12"
+        // e grava TODAS as datas de cada cidade (uma cidade tem várias datas no mês).
         const texto = asStr(body.texto);
         if (!texto) return bad('texto vazio');
         const { itens, invalidas } = parseAgendaTexto(texto);
         const { data: cals, error: eCals } = await supabase.from('bot_calendars').select('city, calendar_id');
         if (eCals) throw eCals;
-        const porNorm = new Map((cals || []).map((c) => [normCidade(c.city), c]));
-        const aplicados = [];
+        const porChave = new Map((cals || []).map((c) => [chaveCidade(c.city), c]));
         const naoEncontrados = [];
+        const porCidade = new Map(); // city -> Set(datas ISO)
         for (const it of itens) {
-          const alvo = porNorm.get(normCidade(it.cidade));
+          const k = chaveCidade(it.cidade);
+          const alvo =
+            porChave.get(k) ||
+            (cals || []).find((c) => chaveCidade(c.city).includes(k) && k.length >= 4) ||
+            (cals || []).find((c) => k.includes(chaveCidade(c.city)) && chaveCidade(c.city).length >= 4);
           if (!alvo) { naoEncontrados.push(it.linha); continue; }
-          const iso = paraISO(it);
+          if (!porCidade.has(alvo.city)) porCidade.set(alvo.city, new Set());
+          porCidade.get(alvo.city).add(paraISO(it));
+        }
+        const hoje = new Date().toISOString().slice(0, 10);
+        const aplicados = [];
+        for (const [city, setDatas] of porCidade) {
+          const datas = [...setDatas].sort();
+          const proxima = datas.find((d) => d >= hoje) || datas[datas.length - 1];
           const { error } = await supabase
             .from('bot_calendars')
-            .update({ attendance_date: iso })
-            .eq('city', alvo.city);
+            .update({ attendance_dates: datas, attendance_date: proxima })
+            .eq('city', city);
           if (error) throw error;
-          aplicados.push({ city: alvo.city, date: iso });
+          aplicados.push({ city, datas });
         }
         return NextResponse.json({ ok: true, aplicados, naoEncontrados, invalidas }, { headers: noStore });
       }
