@@ -63,6 +63,36 @@ export async function requireAdmin(req) {
   return user;
 }
 
+// ── Papéis do painel (item 17.5) ─────────────────────────────────────────────
+// admin   = e-mails em ADMIN_EMAILS (tudo)
+// operador = e-mails em OPERATOR_EMAILS (Conversas, controle por contato,
+//            Sugestões, Sombra, Avisos, FAQ/Objeções). Validado SEMPRE no servidor.
+const listaEmails = (v) => (v || '').split(',').map((x) => x.trim().toLowerCase()).filter(Boolean);
+
+export function papelDoEmail(email) {
+  const e = (email || '').toLowerCase();
+  if (!e) return null;
+  if (listaEmails(process.env.ADMIN_EMAILS).includes(e)) return 'admin';
+  if (listaEmails(process.env.OPERATOR_EMAILS).includes(e)) return 'operador';
+  return null;
+}
+
+// Exige um usuário logado com um dos papéis. Falha fechado: sem ADMIN_EMAILS → 503.
+// Devolve { user, papel }.
+export async function requirePapel(req, papeis = ['admin']) {
+  if (!listaEmails(process.env.ADMIN_EMAILS).length) {
+    const e = new Error('ADMIN_EMAILS não configurado no servidor'); e.status = 503; throw e;
+  }
+  const header = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7).trim() : '';
+  if (!token) { const e = new Error('Não autenticado'); e.status = 401; throw e; }
+  const { data, error } = await appAuthClient().auth.getUser(token);
+  if (error || !data?.user) { const e = new Error('Sessão inválida'); e.status = 401; throw e; }
+  const papel = papelDoEmail(data.user.email);
+  if (!papel || !papeis.includes(papel)) { const e = new Error('Sem permissão'); e.status = 403; throw e; }
+  return { user: data.user, papel };
+}
+
 export function erroJson(e) {
   return Response.json({ error: e.message || 'Erro interno' }, { status: e.status || 500 });
 }
