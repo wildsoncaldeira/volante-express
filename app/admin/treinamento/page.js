@@ -2,6 +2,11 @@
 // app/admin/treinamento/page.js
 // Tela de Treinamento de Fotos — reconstrução da ferramenta HTML, server-side.
 // Nenhuma chave do Supabase no cliente: usa o token de sessão + /api/volantes/*.
+//
+// Fila (item 19): primeiro as PENDENTES (sem associação e não ignoradas), na ordem de
+// prioridade que a API devolve; depois as treinadas; as ignoradas por último. Ao salvar,
+// a foto vai para o grupo das treinadas e a próxima pendente aparece no lugar — sem voltar
+// ao começo. Abas por montadora com progresso, filtro de status e contadores.
 import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { createBrowserClient } from '@supabase/ssr';
@@ -14,6 +19,18 @@ async function lerJson(res) {
   catch { throw new Error(res.ok ? 'Resposta inválida do servidor' : `HTTP ${res.status}`); }
 }
 
+const CHAVE_ABA = 've_treinamento_aba';
+const lerAbaSalva = () => {
+  try { return window.localStorage.getItem(CHAVE_ABA) || 'todas'; } catch { return 'todas'; }
+};
+const salvarAba = (v) => {
+  try { window.localStorage.setItem(CHAVE_ABA, v); } catch { /* storage bloqueado: segue sem lembrar */ }
+};
+
+const FILTROS = [['pendentes', 'Pendentes'], ['treinadas', 'Treinadas'], ['ignoradas', 'Ignoradas'], ['todas', 'Todas']];
+const nomeMarca = (m) => (m ? m.charAt(0) + m.slice(1).toLowerCase() : '(sem marca)');
+const ORDEM_STATUS = { pendente: 0, treinada: 1, ignorada: 2 };
+
 export default function TreinamentoVolantes() {
   const router = useRouter();
   const supabase = useMemo(() => createBrowserClient(
@@ -21,9 +38,9 @@ export default function TreinamentoVolantes() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
   ), []);
   const [fotos, setFotos] = useState([]);
-  const [fila, setFila] = useState([]);              // fila exibida (pode ocultar as ignoradas)
-  const [mostrarIgnoradas, setMostrarIgnoradas] = useState(false);
-  const [indice, setIndice] = useState(0);
+  const [aba, setAba] = useState(lerAbaSalva);          // marca escolhida ('todas' = todas)
+  const [filtro, setFiltro] = useState('pendentes');     // pendentes | treinadas | ignoradas | todas
+  const [atualId, setAtualId] = useState(null);          // foto em exibição (null = primeira da fila)
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [modelos, setModelos] = useState([]);
@@ -60,11 +77,8 @@ export default function TreinamentoVolantes() {
         const dc = await lerJson(rc);
         if (!rf.ok) throw new Error(df.error || 'Erro ao carregar fotos');
         if (!rc.ok) throw new Error(dc.error || 'Erro ao carregar associações');
-        const todas = df.fotos || [];
-        const ign = dc.ignoradas || [];
-        setFotos(todas);
-        setIgnoradas(ign);
-        setFila(todas.filter((f) => !ign.includes(f.id))); // por padrão esconde as já marcadas como irrelevantes
+        setFotos(df.fotos || []);
+        setIgnoradas(dc.ignoradas || []);
         const map = {};
         for (const [fid, linhas] of Object.entries(dc.porFoto || {})) {
           map[fid] = linhas.map((r) => ({ modelo: r.modelo_cliente, marca: r.marca_foto, anoMin: r.ano_min, anoMax: r.ano_max }));
@@ -76,16 +90,59 @@ export default function TreinamentoVolantes() {
     return () => clearTimeout(timer.current);
   }, [authHeaders]);
 
-  const foto = fila[indice];
+  // Status de cada foto, derivado de `assoc` e `ignoradas` (a tela já carrega os dois).
+  const statusDe = useCallback((f) => {
+    if (ignoradas.includes(f.id)) return 'ignorada';
+    return assoc[f.id]?.length ? 'treinada' : 'pendente';
+  }, [assoc, ignoradas]);
+
+  // Marcas + progresso (feitas = treinadas + ignoradas; total = todas as fotos da marca).
+  const marcas = useMemo(() => {
+    const m = new Map();
+    for (const f of fotos) {
+      const k = f.marca || '';
+      const e = m.get(k) || { marca: k, total: 0, pendentes: 0, treinadas: 0, ignoradas: 0 };
+      e.total += 1;
+      const s = statusDe(f);
+      if (s === 'pendente') e.pendentes += 1; else if (s === 'treinada') e.treinadas += 1; else e.ignoradas += 1;
+      m.set(k, e);
+    }
+    return [...m.values()].sort((a, b) => nomeMarca(a.marca).localeCompare(nomeMarca(b.marca)));
+  }, [fotos, statusDe]);
+
+  const abaValida = aba === 'todas' || marcas.some((m) => m.marca === aba) ? aba : 'todas';
+
+  const contadores = useMemo(() => {
+    const base = abaValida === 'todas'
+      ? marcas.reduce((a, m) => ({ total: a.total + m.total, pendentes: a.pendentes + m.pendentes, treinadas: a.treinadas + m.treinadas, ignoradas: a.ignoradas + m.ignoradas }), { total: 0, pendentes: 0, treinadas: 0, ignoradas: 0 })
+      : marcas.find((m) => m.marca === abaValida) || { total: 0, pendentes: 0, treinadas: 0, ignoradas: 0 };
+    return base;
+  }, [marcas, abaValida]);
+
+  // Fila: filtra por marca e status e ordena pendentes → treinadas → ignoradas.
+  // `Array.sort` é estável, então dentro de cada grupo vale a prioridade da API.
+  const fila = useMemo(() => {
+    const alvo = { pendentes: 'pendente', treinadas: 'treinada', ignoradas: 'ignorada' }[filtro];
+    return fotos
+      .filter((f) => (abaValida === 'todas' || f.marca === abaValida))
+      .map((f) => ({ f, s: statusDe(f) }))
+      .filter(({ s }) => !alvo || s === alvo)
+      .sort((a, b) => ORDEM_STATUS[a.s] - ORDEM_STATUS[b.s])
+      .map(({ f }) => f);
+  }, [fotos, abaValida, filtro, statusDe]);
+
+  const porId = useMemo(() => new Map(fotos.map((f) => [f.id, f])), [fotos]);
+  const foto = (atualId != null && porId.get(atualId)) || fila[0];
+  const indice = foto ? fila.findIndex((f) => f.id === foto.id) : -1;
   const estaIgnorada = foto ? ignoradas.includes(foto.id) : false;
 
   // Pré-carrega os modelos da foto (depois da carga e a cada troca de foto)
   useEffect(() => {
-    if (carregando || !foto) return;
-    setModelos(assoc[foto.id] ? assoc[foto.id].map((m) => ({ ...m })) : []);
+    if (carregando) return;
+    setModelos(foto && assoc[foto.id] ? assoc[foto.id].map((m) => ({ ...m })) : []);
     setBusca(''); setAnoMin(''); setAnoMax(''); setCopiarId(''); setMsg(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [indice, carregando]);
+  }, [foto?.id, carregando]);
 
   const sugestoes = useMemo(() => {
     const q = busca.toLowerCase().trim();
@@ -103,27 +160,25 @@ export default function TreinamentoVolantes() {
     setBusca(''); setAnoMin(''); setAnoMax(''); setSugAberta(false); buscaRef.current?.focus();
   }, [busca, anoMin, anoMax, foto]);
 
+  const escolherAba = (v) => { setAba(v); salvarAba(v); setAtualId(null); setFiltro('pendentes'); };
+  const escolherFiltro = (v) => { setFiltro(v); setAtualId(null); };
+
+  // Pular: vai para a próxima da fila; no fim, volta à primeira (e avisa).
   const proxima = useCallback(() => {
     clearTimeout(timer.current);
-    setIndice((i) => i + 1);
-  }, []);
-
-  // Alterna entre mostrar/ocultar da fila as fotos já marcadas como irrelevantes
-  // (mantém a posição da foto atual, se ela continuar visível).
-  const alternarIgnoradas = () => {
-    const novo = !mostrarIgnoradas;
-    const atualId = fila[indice]?.id;
-    const nova = fotos.filter((f) => novo || !ignoradas.includes(f.id));
-    setMostrarIgnoradas(novo);
-    setFila(nova);
-    const pos = nova.findIndex((f) => f.id === atualId);
-    setIndice(pos >= 0 ? pos : 0);
-  };
+    if (!fila.length) return;
+    const prox = fila[indice + 1];
+    if (prox) setAtualId(prox.id);
+    else { setAtualId(fila[0].id); setMsg({ t: 'ok', m: 'Fim da fila: voltando à primeira desta lista' }); }
+  }, [fila, indice]);
 
   async function salvar(linhas, avancar = true) {
     if (!foto) return;
     if (!linhas.length) { setMsg({ t: 'err', m: 'Adicione pelo menos um modelo.' }); return; }
     setSalvando(true); setMsg(null);
+    // A "próxima" é definida ANTES de atualizar o status: a foto salva sai da posição atual
+    // (vai para o grupo das treinadas) e a seguinte da fila ocupa o lugar.
+    const proximaId = fila[indice + 1]?.id ?? fila.find((f) => f.id !== foto.id)?.id ?? null;
     try {
       const res = await fetch('/api/volantes/compatibilidade', {
         method: 'POST',
@@ -142,7 +197,7 @@ export default function TreinamentoVolantes() {
         setIgnoradas((prev) => prev.filter((id) => id !== foto.id));
         setMsg({ t: 'ok', m: `Salvo (${d.salvos})` });
       }
-      if (avancar) { clearTimeout(timer.current); timer.current = setTimeout(proxima, 350); }
+      if (avancar) { clearTimeout(timer.current); timer.current = setTimeout(() => setAtualId(proximaId), 350); }
     } catch (e) { setMsg({ t: 'err', m: e.message }); }
     finally { setSalvando(false); }
   }
@@ -157,24 +212,67 @@ export default function TreinamentoVolantes() {
 
   if (carregando) return <div className="p-10 text-slate-400">Carregando fotos…</div>;
   if (erro) return <div className="p-10 text-red-500">Erro: {erro}</div>;
-  if (!foto) return <div className="p-10 text-slate-400">🎉 Todas as fotos revisadas!</div>;
+
+  const cabecalho = (
+    <header className="bg-[#1a3270] border-b border-slate-700 px-6 py-3 space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <h1 className="text-[15px] font-semibold">🎯 Treinamento de Fotos — Volante Express</h1>
+        <span className="text-xs text-slate-300 bg-white/10 px-3 py-1 rounded-full">
+          pendentes {contadores.pendentes} · treinadas {contadores.treinadas} · ignoradas {contadores.ignoradas}
+        </span>
+      </div>
+      <div className="flex gap-1.5 overflow-x-auto pb-1">
+        {[{ marca: 'todas', total: fotos.length, feitas: contadores.total ? marcas.reduce((a, m) => a + m.treinadas + m.ignoradas, 0) : 0 }, ...marcas.map((m) => ({ marca: m.marca, total: m.total, feitas: m.treinadas + m.ignoradas }))].map((t) => (
+          <button key={t.marca || 'sem'} onClick={() => escolherAba(t.marca)}
+            className={`whitespace-nowrap text-xs rounded-full px-3 py-1 border ${abaValida === t.marca ? 'bg-white text-[#1a3270] border-white font-bold' : 'border-slate-500 text-slate-200 hover:bg-white/10'}`}>
+            {t.marca === 'todas' ? 'Todas' : nomeMarca(t.marca)} {t.feitas}/{t.total}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 flex-wrap">
+        {FILTROS.map(([v, r]) => (
+          <button key={v} onClick={() => escolherFiltro(v)}
+            className={`text-xs rounded-md px-3 py-1 border ${filtro === v ? 'bg-emerald-500 text-black border-emerald-500 font-bold' : 'border-slate-500 text-slate-300 hover:bg-white/10'}`}>{r}</button>
+        ))}
+        {foto && <span className="ml-auto text-xs text-slate-400">{indice + 1} / {fila.length} nesta lista</span>}
+      </div>
+    </header>
+  );
+
+  if (!foto) {
+    const proximaMarca = [...marcas].filter((m) => m.pendentes > 0 && m.marca !== abaValida).sort((a, b) => b.pendentes - a.pendentes)[0];
+    const semPendentesNoFiltro = filtro === 'pendentes';
+    return (
+      <div className="min-h-screen bg-[#0d1117] text-slate-200">
+        {cabecalho}
+        <div className="p-10 text-center space-y-4">
+          {semPendentesNoFiltro ? (
+            abaValida === 'todas' ? (
+              <>
+                <div className="text-2xl">🎉 Todas as fotos revisadas!</div>
+                <button onClick={() => escolherFiltro('treinadas')} className="bg-[#28499f] hover:bg-[#1a3270] text-white rounded-md px-4 py-2 text-sm font-semibold">Ir para as treinadas</button>
+              </>
+            ) : (
+              <>
+                <div className="text-2xl">✅ {nomeMarca(abaValida)} concluída</div>
+                {proximaMarca && <button onClick={() => escolherAba(proximaMarca.marca)} className="bg-emerald-600 hover:bg-emerald-500 text-black rounded-md px-4 py-2 text-sm font-semibold">Próxima: {nomeMarca(proximaMarca.marca)} ({proximaMarca.pendentes} pendentes)</button>}
+                <div><button onClick={() => escolherFiltro('treinadas')} className="text-sm text-slate-400 underline">Ver as treinadas de {nomeMarca(abaValida)}</button></div>
+              </>
+            )
+          ) : (
+            <div className="text-slate-400">Nenhuma foto neste filtro.</div>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const badge = badgePrioridade(foto._prio);
-  const revisados = Object.keys(assoc).length + ignoradas.length;
+  const statusFoto = statusDe(foto);
 
   return (
     <div className="min-h-screen bg-[#0d1117] text-slate-200">
-      <header className="bg-[#1a3270] border-b border-slate-700 px-6 py-3 flex items-center justify-between">
-        <h1 className="text-[15px] font-semibold">🎯 Treinamento de Fotos — Volante Express</h1>
-        <div className="flex items-center gap-3">
-          <button onClick={alternarIgnoradas} className="text-xs text-slate-300 border border-slate-600 rounded-full px-3 py-1 hover:bg-white/10">
-            {mostrarIgnoradas ? '🙈 Ocultar ignoradas' : '👁 Mostrar ignoradas'}
-          </button>
-          <span className="text-xs text-slate-400 bg-white/10 px-3 py-1 rounded-full">
-            {indice + 1} / {fila.length} · {revisados} revisados
-          </span>
-        </div>
-      </header>
+      {cabecalho}
 
       <main className="max-w-6xl mx-auto p-6 grid md:grid-cols-[340px_1fr] gap-6">
         <div className="relative rounded-xl overflow-hidden bg-[#161b22] border border-slate-700 aspect-square">
@@ -182,8 +280,9 @@ export default function TreinamentoVolantes() {
           <img src={foto.url} alt="Volante" className="w-full h-full object-cover" />
           <span className={`absolute top-2 left-2 text-[10px] font-bold px-2 py-0.5 rounded ${badge.classe}`}>{badge.texto}</span>
           {estaIgnorada && <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded bg-red-600 text-white">IGNORADA</span>}
+          {statusFoto === 'treinada' && <span className="absolute top-2 right-2 text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-600 text-white">TREINADA</span>}
           <span className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/85 to-transparent px-3 pt-6 pb-2 text-[11px] font-mono text-white/70">
-            {foto.marca} / {foto.modelo_slug}
+            #{foto.id} · {foto.marca} / {foto.modelo_slug}
           </span>
         </div>
 
